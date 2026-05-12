@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 环境变量（包含敏感信息）
+.env
+
+# 输入输出数据目录
+input/*
+output/*
+mineru_output/*
+kimi_output/*
+data/*
+prompt_test/*
+
+# 保留目录结构（可选：如果需要保留空目录，取消下面几行的注释）
+# !input/.gitkeep
+# !output/.gitkeep
+# !mineru_output/.gitkeep
+# !kimi_output/.gitkeep
+# !data/.gitkeep

@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文档结构化 Pipeline 处理流程</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            line-height: 1.8;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* 头部 */
+        .header {
+            text-align: center;
+            padding: 50px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 16px;
+            margin-bottom: 40px;
+            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.3);
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        /* 流程概览 */
+        .pipeline-overview {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 40px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .stage-node {
+            text-align: center;
+            padding: 15px 20px;
+            border-radius: 10px;
+            min-width: 150px;
+            transition: transform 0.3s;
+        }
+
+        .stage-node:hover {
+            transform: translateY(-5px);
+        }
+
+        .stage-node.stage-1 { background: #e3f2fd; color: #1565c0; }
+        .stage-node.stage-2 { background: #f3e5f5; color: #6a1b9a; }
+        .stage-node.stage-3 { background: #e8f5e9; color: #2e7d32; }
+        .stage-node.stage-4 { background: #fff3e0; color: #ef6c00; }
+
+        .stage-node .icon {
+            font-size: 2em;
+            margin-bottom: 8px;
+        }
+
+        .stage-node .name {
+            font-weight: bold;
+            font-size: 0.95em;
+        }
+
+        .arrow {
+            font-size: 1.5em;
+            color: #999;
+        }
+
+        /* 示例文件卡片 */
+        .example-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            border-left: 5px solid #667eea;
+        }
+
+        .example-card h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .example-card h2 .badge {
+            background: #667eea;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 0.6em;
+        }
+
+        /* 阶段卡片 */
+        .stage-section {
+            background: white;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            overflow: hidden;
+        }
+
+        .stage-header {
+            padding: 20px 30px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .stage-header.stage-1 { background: #e3f2fd; }
+        .stage-header.stage-2 { background: #f3e5f5; }
+        .stage-header.stage-3 { background: #e8f5e9; }
+        .stage-header.stage-4 { background: #fff3e0; }
+
+        .stage-number {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.3em;
+            color: white;
+            flex-shrink: 0;
+        }
+
+        .stage-1 .stage-number { background: #1565c0; }
+        .stage-2 .stage-number { background: #6a1b9a; }
+        .stage-3 .stage-number { background: #2e7d32; }
+        .stage-4 .stage-number { background: #ef6c00; }
+
+        .stage-title h3 {
+            font-size: 1.4em;
+            margin-bottom: 3px;
+        }
+
+        .stage-title p {
+            color: #666;
+            font-size: 0.95em;
+        }
+
+        .stage-body {
+            padding: 25px 30px;
+        }
+
+        /* 文件树 */
+        .file-tree {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px 25px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+            margin: 15px 0;
+            overflow-x: auto;
+        }
+
+        .file-tree .dir { color: #4fc1ff; }
+        .file-tree .file { color: #ce9178; }
+        .file-tree .comment { color: #6a9955; }
+        .file-tree .arrow { color: #dcdcaa; }
+
+        /* 代码块 */
+        .code-block {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px 25px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.88em;
+            line-height: 1.7;
+            margin: 15px 0;
+            overflow-x: auto;
+        }
+
+        .code-block .keyword { color: #569cd6; }
+        .code-block .string { color: #ce9178; }
+        .code-block .comment { color: #6a9955; }
+        .code-block .tag { color: #569cd6; }
+        .code-block .attr { color: #9cdcfe; }
+
+        /* Markdown 预览 */
+        .md-preview {
+            background: #fafafa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 25px 30px;
+            margin: 15px 0;
+        }
+
+        .md-preview h1 {
+            font-size: 1.8em;
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .md-preview h2 {
+            font-size: 1.4em;
+            color: #444;
+            margin-top: 25px;
+            margin-bottom: 12px;
+        }
+
+        .md-preview h3 {
+            font-size: 1.15em;
+            color: #555;
+            margin-top: 18px;
+            margin-bottom: 10px;
+        }
+
+        .md-preview table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        .md-preview th,
+        .md-preview td {
+            border: 1px solid #ddd;
+            padding: 10px 12px;
+            text-align: left;
+        }
+
+        .md-preview th {
+            background: #f0f0f0;
+            font-weight: 600;
+        }
+
+        .md-preview tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+
+        .md-preview img {
+            max-width: 100%;
+            border-radius: 6px;
+            margin: 10px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .md-preview .separator {
+            text-align: center;
+            color: #999;
+            font-size: 1.2em;
+            letter-spacing: 5px;
+            margin: 20px 0;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 4px;
+        }
+
+        .md-preview ul, .md-preview ol {
+            margin: 10px 0 10px 25px;
+        }
+
+        .md-preview li {
+            margin: 5px 0;
+        }
+
+        .md-preview strong {
+            color: #444;
+        }
+
+        /* 步骤列表 */
+        .steps {
+            counter-reset: step;
+            list-style: none;
+            margin: 15px 0;
+        }
+
+        .steps li {
+            position: relative;
+            padding-left: 45px;
+            margin-bottom: 15px;
+            min-height: 30px;
+        }
+
+        .steps li::before {
+            counter-increment: step;
+            content: counter(step);
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 30px;
+            height: 30px;
+            background: #667eea;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.85em;
+        }
+
+        /* 高亮框 */
+        .highlight-box {
+            background: #fff8e1;
+            border-left: 4px solid #ffc107;
+            padding: 15px 20px;
+            margin: 15px 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .highlight-box.info {
+            background: #e3f2fd;
+            border-left-color: #2196f3;
+        }
+
+        .highlight-box.success {
+            background: #e8f5e9;
+            border-left-color: #4caf50;
+        }
+
+        /* 总结表格 */
+        .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        .summary-table th,
+        .summary-table td {
+            padding: 14px 18px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .summary-table th {
+            background: #667eea;
+            color: white;
+            font-weight: 600;
+        }
+
+        .summary-table tr:hover {
+            background: #f5f5f5;
+        }
+
+        .summary-table td:first-child {
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        /* 标签 */
+        .tag-pill {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 500;
+            margin-right: 5px;
+        }
+
+        .tag-blue { background: #e3f2fd; color: #1565c0; }
+        .tag-purple { background: #f3e5f5; color: #6a1b9a; }
+        .tag-green { background: #e8f5e9; color: #2e7d32; }
+        .tag-orange { background: #fff3e0; color: #ef6c00; }
+
+        /* 页脚 */
+        .footer {
+            text-align: center;
+            padding: 30px;
+            color: #999;
+            font-size: 0.9em;
+        }
+
+        /* 动画 */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .stage-section {
+            animation: fadeIn 0.6s ease-out;
+        }
+
+        .stage-section:nth-child(2) { animation-delay: 0.1s; }
+        .stage-section:nth-child(3) { animation-delay: 0.2s; }
+        .stage-section:nth-child(4) { animation-delay: 0.3s; }
+        .stage-section:nth-child(5) { animation-delay: 0.4s; }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .header h1 { font-size: 1.8em; }
+            .pipeline-overview { flex-direction: column; }
+            .arrow { transform: rotate(90deg); }
+            .stage-body { padding: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <div class="header">
+            <h1>文档结构化 Pipeline</h1>
+            <p>PPT / Word / PDF → 结构化 Markdown → HTML 展示效果</p>
+        </div>
+
+        <!-- 流程概览 -->
+        <div class="pipeline-overview">
+            <div class="stage-node stage-1">
+                <div class="icon">📄</div>
+                <div class="name">MinerU 解析</div>
+            </div>
+            <div class="arrow">→</div>
+            <div class="stage-node stage-2">
+                <div class="icon">🤖</div>
+                <div class="name">Kimi 整理</div>
+            </div>
+            <div class="arrow">→</div>
+            <div class="stage-node stage-3">
+                <div class="icon">🖼️</div>
+                <div class="name">图片处理</div>
+            </div>
+            <div class="arrow">→</div>
+            <div class="stage-node stage-4">
+                <div class="icon">📦</div>
+                <div class="name">归档</div>
+            </div>
+        </div>
+
+        <!-- 示例文件 -->
+        <div class="example-card">
+            <h2>
+                示例文件
+                <span class="badge">不良品报告</span>
+            </h2>
+            <p><strong>文件名：</strong><code>3QC前保险杠异响不良报告.pptx</code></p>
+            <p><strong>文件类型：</strong>PowerPoint 演示文稿</p>
+            <p><strong>内容：</strong>汽车前保险杠装配异响问题的不良品分析报告，包含发生状况、原因调查、改善对策等内容</p>
+            <div class="highlight-box info">
+                <strong>操作方式：</strong>将 PPT 文件放入 <code>input/</code> 目录，执行 <code>python pipeline.py</code> 即可自动完成全流程处理
+            </div>
+        </div>
+
+        <!-- Stage 1 -->
+        <div class="stage-section">
+            <div class="stage-header stage-1">
+                <div class="stage-number">1</div>
+                <div class="stage-title">
+                    <h3>MinerU 文档解析</h3>
+                    <p>将 PPT 解析为原始 Markdown + 提取图片</p>
+                </div>
+            </div>
+            <div class="stage-body">
+                <h4>📥 输入</h4>
+                <div class="file-tree">
+<span class="dir">input/</span>
+└── <span class="file">3QC前保险杠异响不良报告.pptx</span>  <span class="comment">← 原始PPT文件</span>
+                </div>
+
+                <h4>⚙️ 处理过程</h4>
+                <ol class="steps">
+                    <li>申请批量文件上传链接（MinerU API）</li>
+                    <li>上传 PPT 文件到 MinerU 服务器</li>
+                    <li>轮询等待解析完成（PPT → Markdown + 图片提取）</li>
+                    <li>下载并解压解析结果</li>
+                </ol>
+
+                <h4>📤 输出</h4>
+                <div class="file-tree">
+<span class="dir">mineru_output/</span>
+└── <span class="dir">3QC前保险杠异响不良报告/</span>
+    ├── <span class="file">3QC前保险杠异响不良报告.md</span>  <span class="comment">← 原始解析的Markdown</span>
+    └── <span class="dir">images/</span>
+        ├── <span class="file">image_0.jpg</span>  <span class="comment">← PPT第1页图片</span>
+        ├── <span class="file">image_1.jpg</span>  <span class="comment">← 不良品照片</span>
+        └── <span class="file">image_2.jpg</span>  <span class="comment">← 原因分析图</span>
+                </div>
+
+                <h4>📝 原始 Markdown 内容示例</h4>
+                <div class="code-block">
+<span class="comment"># 此时内容结构松散，格式不统一</span>
+
+3QC前保险杠异响不良
+
+■发生日期：2024年3月15日
+■发生场所：总装车间
+■不良现象：前保险杠装配后行驶中产生异响
+■车型：3QC
+■零件名称：前保险杠总成
+
+照片：
+![](images/image_1.jpg)
+
+原因分析：
+焊接点位置偏差导致装配间隙过大
+
+对策：
+调整焊接夹具定位销
+                </div>
+
+                <div class="highlight-box">
+                    <strong>注意：</strong>此时的 Markdown 只是 PPT 内容的"平铺"，没有按照标准模板结构化，无法直接用于知识库
+                </div>
+            </div>
+        </div>
+
+        <!-- Stage 2 -->
+        <div class="stage-section">
+            <div class="stage-header stage-2">
+                <div class="stage-number">2</div>
+                <div class="stage-title">
+                    <h3>Kimi 文档整理</h3>
+                    <p>按照五部分模板重新组织内容结构</p>
+                </div>
+            </div>
+            <div class="stage-body">
+                <h4>📋 模板结构</h4>
+                <p>Kimi 使用预定义的<strong>不良报告-硬件类模板</strong>，包含五个固定部分：</p>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin: 15px 0;">
+                    <span class="tag-pill tag-purple">第一部分：发生状况 (5W2H)</span>
+                    <span class="tag-pill tag-purple">第二部分：事实把握</span>
+                    <span class="tag-pill tag-purple">第三部分：原因调查</span>
+                    <span class="tag-pill tag-purple">第四部分：改善对策</span>
+                    <span class="tag-pill tag-purple">第五部分：水平展开</span>
+                </div>
+
+                <h4>⚙️ 处理过程</h4>
+                <ol class="steps">
+                    <li>读取 Stage 1 产出的原始 Markdown</li>
+                    <li>调用 Kimi API，传入模板结构作为 System Prompt</li>
+                    <li>Kimi 分析内容，将信息归类到对应的模板章节</li>
+                    <li>从文件名中提取车型代号（如 <code>3QC</code>）作为标题</li>
+                </ol>
+
+                <h4>📤 输出</h4>
+                <div class="file-tree">
+<span class="dir">kimi_output/</span>
+└── <span class="dir">batch_20240513_143022/</span>
+    └── <span class="file">processed_3QC前保险杠异响不良报告.md</span>  <span class="comment">← 结构化Markdown</span>
+                </div>
+
+                <h4>📝 整理后的 Markdown 内容示例</h4>
+                <div class="code-block">
+<span class="tag">#</span> 不良项目：2024年3月3QC前保险杠异响
+
+<span class="tag">##</span> 第一部分：发生状况 (5W2H)
+
+1. <span class="keyword">**不良现象/客户投诉事象（What）**</span>：前保险杠装配后行驶中产生异响
+2. <span class="keyword">**车型/机种（What）**</span>：3QC
+3. <span class="keyword">**零件名称/零件号（What）**</span>：前保险杠总成
+4. <span class="keyword">**发生日期（When）**</span>：2024年3月15日
+5. <span class="keyword">**发生地点（Where）**</span>：总装车间
+...
+
+<span class="tag">##</span> 第二部分：事实把握（现场·现物·现实）
+
+<span class="tag">###</span> 1、不良品确认结果
+1.1 确认结果描述：异响来源于保险杠与翼子板配合处
+1.2 正常状态：间隙 2.5±0.5mm
+1.3 有问题的状态：间隙 4.2mm，超出规格上限
+
+![](images/image_1.jpg)
+
+<span class="tag">##</span> 第三部分：原因调查
+...
+                </div>
+
+                <div class="highlight-box success">
+                    <strong>改进：</strong>内容已按标准模板结构化，但图片链接仍是相对路径 <code>images/xxx.jpg</code>，标题格式还需进一步处理
+                </div>
+            </div>
+        </div>
+
+        <!-- Stage 3 -->
+        <div class="stage-section">
+            <div class="stage-header stage-3">
+                <div class="stage-number">3</div>
+                <div class="stage-title">
+                    <h3>图片处理和链接更新</h3>
+                    <p>移动图片、更新链接、处理标题格式</p>
+                </div>
+            </div>
+            <div class="stage-body">
+                <h4>⚙️ 处理过程（三步）</h4>
+
+                <div style="margin: 20px 0;">
+                    <h5 style="color: #2e7d32; margin-bottom: 10px;">步骤 1：移动图片到文件服务器</h5>
+                    <div class="file-tree">
+<span class="dir">D:/工作/信息数据系/文件服务器/pic/</span>
+└── <span class="dir">20240513_143022_123/</span>     <span class="comment">← 按时间戳创建目录</span>
+    ├── <span class="file">image_0.jpg</span>
+    ├── <span class="file">image_1.jpg</span>
+    └── <span class="file">image_2.jpg</span>
+                    </div>
+                </div>
+
+                <div style="margin: 20px 0;">
+                    <h5 style="color: #2e7d32; margin-bottom: 10px;">步骤 2：更新图片链接</h5>
+                    <div class="code-block">
+<span class="comment"># 替换前：相对路径</span>
+![](images/image_1.jpg)
+
+<span class="comment"># 替换后：服务器URL</span>
+![](http://172.16.75.37:60128/pic/20240513_143022_123/image_1.jpg)
+                    </div>
+                </div>
+
+                <div style="margin: 20px 0;">
+                    <h5 style="color: #2e7d32; margin-bottom: 10px;">步骤 3：处理 Markdown 内容结构</h5>
+                    <div class="code-block">
+<span class="comment"># 提取"不良项目"标题，插入到每个二级标题中</span>
+<span class="comment"># 在二级标题之间添加分隔符 +=+=+=</span>
+
+<span class="tag">#</span> 不良项目：2024年3月3QC前保险杠异响
+
+<span class="tag">##</span> [2024年3月3QC前保险杠异响]第一部分：发生状况 (5W2H)
+...
+
++=+=+=
+
+<span class="tag">##</span> [2024年3月3QC前保险杠异响]第二部分：事实把握（现场·现物·现实）
+...
+
++=+=+=
+
+<span class="tag">##</span> [2024年3月3QC前保险杠异响]第三部分：原因调查
+...
+                    </div>
+                </div>
+
+                <h4>📤 最终输出</h4>
+                <div class="file-tree">
+<span class="dir">output/</span>
+└── <span class="file">processed_3QC前保险杠异响不良报告.md</span>  <span class="comment">← 最终产物 ✅</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stage 4 -->
+        <div class="stage-section">
+            <div class="stage-header stage-4">
+                <div class="stage-number">4</div>
+                <div class="stage-title">
+                    <h3>归档</h3>
+                    <p>保存中间产物，清空目录以备下次使用</p>
+                </div>
+            </div>
+            <div class="stage-body">
+                <div class="file-tree">
+<span class="dir">data/</span>
+└── <span class="dir">20240513143022/</span>           <span class="comment">← 时间戳命名</span>
+    ├── <span class="dir">input/</span>                   <span class="comment">← 原始PPT</span>
+    ├── <span class="dir">mineru_output/</span>           <span class="comment">← MinerU原始解析结果</span>
+    └── <span class="dir">kimi_output/</span>             <span class="comment">← Kimi整理结果</span>
+                </div>
+                <div class="highlight-box info">
+                    归档后，<code>input/</code>、<code>mineru_output/</code>、<code>kimi_output/</code> 目录会被重新创建为空目录，可直接进行下一批处理
+                </div>
+            </div>
+        </div>
+
+        <!-- 最终效果展示 -->
+        <div class="stage-section" style="border: 2px solid #667eea;">
+            <div class="stage-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                <div class="stage-number" style="background: white; color: #667eea;">✓</div>
+                <div class="stage-title">
+                    <h3 style="color: white;">最终 HTML 呈现效果</h3>
+                    <p style="color: rgba(255,255,255,0.8);">Markdown 渲染后的实际展示效果</p>
+                </div>
+            </div>
+            <div class="stage-body">
+                <div class="md-preview">
+                    <h1>不良项目：2024年3月3QC前保险杠异响</h1>
+
+                    <h2>[2024年3月3QC前保险杠异响]第一部分：发生状况 (5W2H)</h2>
+                    <table>
+                        <tr>
+                            <th>项目</th>
+                            <th>内容</th>
+                        </tr>
+                        <tr>
+                            <td><strong>不良现象</strong></td>
+                            <td>前保险杠装配后行驶中产生异响</td>
+                        </tr>
+                        <tr>
+                            <td><strong>车型</strong></td>
+                            <td>3QC</td>
+                        </tr>
+                        <tr>
+                            <td><strong>零件名称</strong></td>
+                            <td>前保险杠总成</td>
+                        </tr>
+                        <tr>
+                            <td><strong>发生日期</strong></td>
+                            <td>2024年3月15日</td>
+                        </tr>
+                        <tr>
+                            <td><strong>发生地点</strong></td>
+                            <td>总装车间</td>
+                        </tr>
+                        <tr>
+                            <td><strong>不良率</strong></td>
+                            <td>12件 / 0.8%</td>
+                        </tr>
+                        <tr>
+                            <td><strong>责任部门</strong></td>
+                            <td>保险杠焊接工序</td>
+                        </tr>
+                    </table>
+
+                    <div class="separator">+=+=+=</div>
+
+                    <h2>[2024年3月3QC前保险杠异响]第二部分：事实把握（现场·现物·现实）</h2>
+
+                    <h3>1、不良品确认结果</h3>
+                    <p><strong>正常状态：</strong>间隙 2.5±0.5mm</p>
+                    <p><strong>有问题的状态：</strong>间隙 4.2mm，超出规格上限</p>
+
+                    <img src="https://via.placeholder.com/600x300/667eea/ffffff?text=不良品照片：保险杠间隙测量" alt="不良品照片">
+
+                    <div class="separator">+=+=+=</div>
+
+                    <h2>[2024年3月3QC前保险杠异响]第三部分：原因调查</h2>
+
+                    <h3>1、不良原因分析</h3>
+                    <p><strong>发生原因：</strong>焊接夹具定位销磨损导致焊接点位置偏差</p>
+                    <p><strong>流出原因：</strong>来料检验未覆盖焊接点位置尺寸</p>
+
+                    <h3>3、why-why分析（深层原因分析）</h3>
+                    <table>
+                        <tr>
+                            <th>层级</th>
+                            <th>问题</th>
+                            <th>答案</th>
+                        </tr>
+                        <tr>
+                            <td>Why1</td>
+                            <td>为什么产生异响？</td>
+                            <td>装配间隙过大</td>
+                        </tr>
+                        <tr>
+                            <td>Why2</td>
+                            <td>为什么间隙过大？</td>
+                            <td>焊接点位置偏差</td>
+                        </tr>
+                        <tr>
+                            <td>Why3</td>
+                            <td>为什么位置偏差？</td>
+                            <td>夹具定位销磨损</td>
+                        </tr>
+                        <tr>
+                            <td>Why4</td>
+                            <td>为什么磨损未发现？</td>
+                            <td>夹具点检周期过长（月度→应改为周度）</td>
+                        </tr>
+                    </table>
+
+                    <div class="separator">+=+=+=</div>
+
+                    <h2>[2024年3月3QC前保险杠异响]第四部分：改善对策</h2>
+
+                    <h3>1、事象对策</h3>
+                    <ul>
+                        <li>更换磨损定位销</li>
+                        <li>增加焊接点位置全数检查</li>
+                    </ul>
+
+                    <h3>2、再发防止对策</h3>
+                    <ul>
+                        <li>夹具点检周期从月度改为周度</li>
+                        <li>纳入标准作业书</li>
+                    </ul>
+
+                    <div class="separator">+=+=+=</div>
+
+                    <h2>[2024年3月3QC前保险杠异响]第五部分：水平展开</h2>
+
+                    <ol>
+                        <li><strong>同车型的水平展开：</strong>排查3QC同平台其他车型（3LN、3GJ）</li>
+                        <li><strong>不同车型的水平展开：</strong>排查所有使用前保险杠同供应商的车型</li>
+                        <li><strong>组织内的水平展开：</strong>将夹具点检周期调整要求纳入标准作业书</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+
+        <!-- 总结 -->
+        <div class="stage-section">
+            <div class="stage-header" style="background: #f5f5f5;">
+                <div class="stage-number" style="background: #667eea;">📊</div>
+                <div class="stage-title">
+                    <h3>Pipeline 阶段总结</h3>
+                    <p>各阶段的作用与输出</p>
+                </div>
+            </div>
+            <div class="stage-body">
+                <table class="summary-table">
+                    <thead>
+                        <tr>
+                            <th>阶段</th>
+                            <th>作用</th>
+                            <th>输入</th>
+                            <th>输出</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="tag-pill tag-blue">Stage 1</span> MinerU</td>
+                            <td>将PPT/Word/PDF解析为原始Markdown</td>
+                            <td><code>input/*.pptx</code></td>
+                            <td><code>mineru_output/{文件名}/</code></td>
+                        </tr>
+                        <tr>
+                            <td><span class="tag-pill tag-purple">Stage 2</span> Kimi</td>
+                            <td>按五部分模板重组内容结构</td>
+                            <td><code>mineru_output/*.md</code></td>
+                            <td><code>kimi_output/batch_{时间戳}/</code></td>
+                        </tr>
+                        <tr>
+                            <td><span class="tag-pill tag-green">Stage 3</span> 图片处理</td>
+                            <td>移动图片、更新链接、处理标题</td>
+                            <td><code>kimi_output/*.md</code> + 图片</td>
+                            <td><code>output/*.md</code>（最终产物）</td>
+                        </tr>
+                        <tr>
+                            <td><span class="tag-pill tag-orange">Stage 4</span> 归档</td>
+                            <td>保存中间产物、清空目录</td>
+                            <td>所有中间目录</td>
+                            <td><code>data/{时间戳}/</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="highlight-box success" style="margin-top: 20px;">
+                    <strong>使用方式：</strong>只需将待处理文件放入 <code>input/</code> 目录，运行 <code>python pipeline.py</code>，最终的结构化 Markdown 就会自动生成到 <code>output/</code> 目录，可直接用于知识库录入或前端展示。
+                </div>
+            </div>
+        </div>
+
+        <!-- 页脚 -->
+        <div class="footer">
+            <p>文档结构化 Pipeline · 基于 MinerU + Kimi API 构建</p>
+        </div>
+    </div>
+</body>
+</html>

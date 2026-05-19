@@ -43,11 +43,4 @@ output/*
 mineru_output/*
 kimi_output/*
 data/*
-prompt_test/*
-
-# 保留目录结构（可选：如果需要保留空目录，取消下面几行的注释）
-# !input/.gitkeep
-# !output/.gitkeep
-# !mineru_output/.gitkeep
-# !kimi_output/.gitkeep
-# !data/.gitkeep
+prompt_test/

@@ -40,12 +40,13 @@ class Config:
 
     # Kimi API 配置
     KIMI_API_KEY = os.getenv("KIMI_API_KEY")
-    KIMI_MODEL = os.getenv("KIMI_MODEL", "kimi-k2.6")
+    KIMI_MODEL = os.getenv("KIMI_MODEL", "kimi-k2.5")
     KIMI_BASE_URL = os.getenv("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
 
     # 图片&文档处理配置
-    IMAGE_BASE_URL = "http://172.16.75.37:60128/pic"
-    IMAGE_TARGET_DIR = Path("D:/工作/信息数据系/文件服务器/pic")
+    IMAGE_BASE_URL = os.getenv("IMAGE_BASE_URL", "")
+    _image_target_dir_str = os.getenv("IMAGE_TARGET_DIR", "")
+    IMAGE_TARGET_DIR = Path(_image_target_dir_str) if _image_target_dir_str else None
     SECTION_SEPARATOR = "+=+=+="
 
     # 支持的文件扩展名
@@ -75,8 +76,9 @@ class Config:
             cls.MINERU_OUTPUT_DIR,
             cls.KIMI_OUTPUT_DIR,
             cls.OUTPUT_DIR,
-            cls.IMAGE_TARGET_DIR,
             cls.DATA_DIR,
         ]
+        if cls.IMAGE_TARGET_DIR:
+            dirs.append(cls.IMAGE_TARGET_DIR)
         for d in dirs:
             d.mkdir(parents=True, exist_ok=True)

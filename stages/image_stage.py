@@ -123,11 +123,11 @@ class ImageStage:
             else:
                 print(f"  未找到不良项目标题，跳过内容处理")
 
-            # 更新图片链接
-            # 匹配 ![]( images/xxx.jpg ) 格式的链接
-            pattern = r'!\[\]\(\s*images/(.*?)\s*\)'
-            replacement = f'![]({self.config.IMAGE_BASE_URL}/{target_folder_name}/\\1)'
-            content = re.sub(pattern, replacement, content)
+            # 更新图片链接（仅在配置了图片服务器时）
+            if target_folder_name and self.config.IMAGE_BASE_URL:
+                pattern = r'!\[\]\(\s*images/(.*?)\s*\)'
+                replacement = f'![]({self.config.IMAGE_BASE_URL}/{target_folder_name}/\\1)'
+                content = re.sub(pattern, replacement, content)
 
             # 保存最终文件
             output_file = final_output_dir / md_file.name
@@ -177,20 +177,36 @@ class ImageStage:
 
         final_output_dir.mkdir(parents=True, exist_ok=True)
 
-        # 创建图片目标文件夹
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-        target_folder_name = timestamp
-        target_folder = self.config.IMAGE_TARGET_DIR / target_folder_name
-        target_folder.mkdir(parents=True, exist_ok=True)
+        # 判断是否启用图片处理
+        enable_image_processing = bool(
+            self.config.IMAGE_BASE_URL and self.config.IMAGE_TARGET_DIR
+        )
+
+        if enable_image_processing:
+            # 创建图片目标文件夹
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+            target_folder_name = timestamp
+            target_folder = self.config.IMAGE_TARGET_DIR / target_folder_name
+            target_folder.mkdir(parents=True, exist_ok=True)
+        else:
+            target_folder_name = None
+            target_folder = None
 
         print(f"输入文件数: {len(kimi_output_files)}")
-        print(f"图片目标目录: {target_folder}")
+        if enable_image_processing:
+            print(f"图片目标目录: {target_folder}")
+        else:
+            print("图片处理: 已禁用（IMAGE_BASE_URL 或 IMAGE_TARGET_DIR 未配置）")
         print(f"最终输出目录: {final_output_dir}")
         print(f"=" * 60)
 
         # 移动图片
         print("\n[步骤1/2] 移动图片文件...")
-        images_moved = self._move_images(mineru_output_dir, target_folder)
+        if enable_image_processing:
+            images_moved = self._move_images(mineru_output_dir, target_folder)
+        else:
+            images_moved = 0
+            print("  跳过图片移动")
         self.stats['images_moved'] = images_moved
         print(f"✓ 移动了 {images_moved} 个图片文件")
 

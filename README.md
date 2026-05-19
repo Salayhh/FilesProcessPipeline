@@ -24,6 +24,10 @@ MINERU_API_TOKEN=your_mineru_token_here
 KIMI_API_KEY=sk-your_kimi_api_key_here
 KIMI_MODEL=kimi-k2.5
 KIMI_BASE_URL=https://api.moonshot.cn/v1
+
+# 图片处理配置（可选，留空则跳过图片移动和链接更新）
+IMAGE_BASE_URL=http://your-server/pic
+IMAGE_TARGET_DIR=/path/to/pic
 ```
 
 ### 2. 准备输入文件
@@ -34,6 +38,8 @@ KIMI_BASE_URL=https://api.moonshot.cn/v1
 mkdir -p input
 cp your-document.pdf input/
 ```
+
+> **提示**：程序首次运行时会自动创建 `input/`、`mineru_output/`、`kimi_output/`、`output/`、`data/` 等必要目录，无需手动创建。
 
 支持的文件格式：
 - PDF (`.pdf`)
@@ -129,11 +135,18 @@ MINERU_LANGUAGE = "ch"        # 文档语言
 
 ### 图片处理配置
 
-```python
-# 图片处理配置
-IMAGE_BASE_URL = "http://172.16.75.37:60128/pic"  # 图片服务器基础URL
-IMAGE_TARGET_DIR = Path("D:/工作/信息数据系/文件服务器/pic")  # 图片目标目录
+在 `.env` 中配置图片服务器（可选）：
+
+```env
+# 图片处理配置（留空则跳过图片移动和链接更新）
+IMAGE_BASE_URL=http://your-server/pic
+IMAGE_TARGET_DIR=/path/to/pic
 ```
+
+- `IMAGE_BASE_URL`：图片服务器访问 URL 前缀
+- `IMAGE_TARGET_DIR`：图片文件物理存放路径
+
+若两者任一留空，Pipeline 将跳过图片移动和链接更新步骤，仅保留 Markdown 内容处理。
 
 ## 故障排查
 

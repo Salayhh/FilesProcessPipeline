@@ -25,7 +25,7 @@ KIMI_API_KEY=sk-your_kimi_api_key_here
 KIMI_MODEL=kimi-k2.5
 KIMI_BASE_URL=https://api.moonshot.cn/v1
 
-# 图片处理配置（可选，留空则跳过图片移动和链接更新）
+# 图片处理配置（可选，留空则跳过图片移动和链接更新，不影响文档结构化功能）
 IMAGE_BASE_URL=http://your-server/pic
 IMAGE_TARGET_DIR=/path/to/pic
 ```

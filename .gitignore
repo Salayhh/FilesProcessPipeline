@@ -44,3 +44,4 @@ mineru_output/*
 kimi_output/*
 data/*
 prompt_test/
+process_test/

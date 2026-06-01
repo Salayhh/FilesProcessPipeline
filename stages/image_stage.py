@@ -46,37 +46,75 @@ class ImageStage:
         return None
 
     def _process_markdown_content(self, content: str, bad_item_title: str) -> str:
-        """处理 Markdown 内容，添加标题到二级标题，并在二级标题间添加分隔符"""
-        # 构建匹配二级标题的正则表达式模式
-        pattern = r'^(##\s*)(第[一二三四五六七八九十]+)(部分|章|节)?(\s*[:：]?\s*)(.*)$'
+        """处理 Markdown 内容：
+        1. 在二级标题前拼接一级标题
+        2. 第二个二级标题起前面添加分隔符
+        3. 第二个二级标题起，如果有下属三级标题，将拼接后的标题拼接到三级标题上并删除该二级标题
+        """
+        lines = content.split('\n')
 
-        def replace_heading(match):
-            prefix = match.group(1)
-            num_part = match.group(2)
-            suffix = match.group(3) if match.group(3) else ""
-            separator = match.group(4)
-            rest = match.group(5)
+        h2_pattern = re.compile(r'^(##\s*)(第[一二三四五六七八九十]+)(部分|章|节)?(\s*[:：]?\s*)(.*)$')
+        h3_pattern = re.compile(r'^(###\s+)(.*)$')
 
-            new_heading = f"{prefix}{bad_item_title}{num_part}{suffix}{separator}{rest}"
-            return new_heading
+        # 找到所有二级标题位置
+        h2_positions = []
+        for i, line in enumerate(lines):
+            if h2_pattern.match(line):
+                h2_positions.append(i)
 
-        new_content = re.sub(pattern, replace_heading, content, flags=re.MULTILINE)
+        # 预计算每个二级标题是否有下属三级标题
+        h2_has_h3 = {}
+        for idx, pos in enumerate(h2_positions):
+            next_h2 = h2_positions[idx + 1] if idx + 1 < len(h2_positions) else len(lines)
+            has_h3 = False
+            for j in range(pos + 1, next_h2):
+                if h3_pattern.match(lines[j]):
+                    has_h3 = True
+                    break
+            h2_has_h3[pos] = has_h3
 
-        # 在二级标题之间添加分隔符
-        separator_pattern = r'^(##\s*\[[^\]]+\]第[一二三四五六七八九十]+)'
-
-        lines = new_content.split('\n')
         result_lines = []
+        h2_count = 0
 
         for i, line in enumerate(lines):
-            if re.match(separator_pattern, line):
-                if result_lines and not result_lines[-1].startswith(self.config.SECTION_SEPARATOR) and i > 0:
-                    if result_lines[-1].strip() == '':
-                        result_lines.append(self.config.SECTION_SEPARATOR)
-                    else:
+            h2_match = h2_pattern.match(line)
+            if h2_match:
+                h2_count += 1
+
+                prefix = h2_match.group(1)
+                num_part = h2_match.group(2)
+                suffix = h2_match.group(3) if h2_match.group(3) else ""
+                separator = h2_match.group(4)
+                rest = h2_match.group(5)
+                new_heading = f"{prefix}{bad_item_title}{num_part}{suffix}{separator}{rest}"
+
+                if h2_count >= 2:
+                    # 第二个及之后，先添加分隔符
+                    if result_lines and result_lines[-1].strip() != '':
                         result_lines.append('')
-                        result_lines.append(self.config.SECTION_SEPARATOR)
+                    result_lines.append(self.config.SECTION_SEPARATOR)
                     result_lines.append('')
+
+                    if h2_has_h3.get(i, False):
+                        # 有三级标题：构造前缀拼接到下属三级标题，删除该二级标题
+                        h2_content = new_heading.lstrip('#').strip()
+                        rest_after_title = h2_content[len(bad_item_title):]
+                        prefix_text = f"{bad_item_title[:-1]}({rest_after_title})]"
+
+                        next_h2 = h2_positions[h2_count] if h2_count < len(h2_positions) else len(lines)
+                        for j in range(i + 1, next_h2):
+                            h3_match = h3_pattern.match(lines[j])
+                            if h3_match:
+                                h3_content = h3_match.group(2)
+                                lines[j] = f"### {prefix_text}{h3_content}"
+                        continue
+                    else:
+                        # 没有三级标题，保留二级标题
+                        result_lines.append(new_heading)
+                else:
+                    # 第一个二级标题，正常保留
+                    result_lines.append(new_heading)
+                continue
 
             result_lines.append(line)
 

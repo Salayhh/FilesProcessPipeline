@@ -167,8 +167,10 @@ class ImageStage:
                 replacement = f'![]({self.config.IMAGE_BASE_URL}/{target_folder_name}/\\1)'
                 content = re.sub(pattern, replacement, content)
 
-            # 保存最终文件
-            output_file = final_output_dir / md_file.name
+            # 保存最终文件，根据 OUTPUT_FORMAT 决定扩展名
+            output_ext = self.config.OUTPUT_FORMAT
+            output_filename = md_file.stem + f".{output_ext}"
+            output_file = final_output_dir / output_filename
             output_file.write_text(content, encoding='utf-8')
 
             print(f"  完成: {md_file.name} -> {output_file}")

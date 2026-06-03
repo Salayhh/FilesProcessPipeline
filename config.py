@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# 加载环境变量
-load_dotenv()
+# 加载环境变量（override=True 确保 .env 值覆盖系统环境变量）
+load_dotenv(override=True)
 
 
 class Config:
@@ -48,6 +48,9 @@ class Config:
     _image_target_dir_str = os.getenv("IMAGE_TARGET_DIR", "")
     IMAGE_TARGET_DIR = Path(_image_target_dir_str) if _image_target_dir_str else None
     SECTION_SEPARATOR = "+=+=+="
+
+    # 最终输出文件格式，可选 "md" 或 "txt"
+    OUTPUT_FORMAT = os.getenv("OUTPUT_FORMAT", "md")
 
     # 支持的文件扩展名
     SUPPORTED_EXTENSIONS = {

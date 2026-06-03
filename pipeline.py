@@ -41,6 +41,7 @@ class DocumentPipeline:
             'kimi_failed': 0,
             'image_success': 0,
             'image_failed': 0,
+            'stage_times': {},
         }
 
     def validate(self) -> bool:
@@ -57,6 +58,8 @@ class DocumentPipeline:
             return False
 
         print("[OK] Config validation passed")
+        print(f"  - Kimi Model: {self.config.KIMI_MODEL}")
+        print(f"  - Output Format: {self.config.OUTPUT_FORMAT}")
 
         # Create Required Directories
         self.config.ensure_directories()
@@ -91,10 +94,12 @@ class DocumentPipeline:
             print("Stage 1: MinerU Document Parsing")
             print("=" * 60)
 
+            t1_start = datetime.now()
             mineru_result = self.mineru_stage.run(
                 input_dir=self.config.INPUT_DIR,
                 output_dir=self.config.MINERU_OUTPUT_DIR
             )
+            self.stats['stage_times']['mineru'] = (datetime.now() - t1_start).total_seconds()
 
             self.stats['mineru_success'] = mineru_result.get('success', 0)
             self.stats['mineru_failed'] = mineru_result.get('failed', 0)
@@ -110,10 +115,12 @@ class DocumentPipeline:
             # Get MinerU Output markdown files
             mineru_md_files = list(self.config.MINERU_OUTPUT_DIR.rglob("*.md"))
 
+            t2_start = datetime.now()
             kimi_result = self.kimi_stage.run(
                 input_files=mineru_md_files,
                 output_dir=self.config.KIMI_OUTPUT_DIR
             )
+            self.stats['stage_times']['kimi'] = (datetime.now() - t2_start).total_seconds()
 
             self.stats['kimi_success'] = kimi_result.get('success', 0)
             self.stats['kimi_failed'] = kimi_result.get('failed', 0)
@@ -129,11 +136,13 @@ class DocumentPipeline:
             # Get Kimi Output files to process
             kimi_output_files = list(self.config.KIMI_OUTPUT_DIR.rglob("*.md"))
 
+            t3_start = datetime.now()
             image_result = self.image_stage.run(
                 kimi_output_files=kimi_output_files,
                 mineru_output_dir=self.config.MINERU_OUTPUT_DIR,
                 final_output_dir=self.config.OUTPUT_DIR
             )
+            self.stats['stage_times']['image'] = (datetime.now() - t3_start).total_seconds()
 
             self.stats['image_success'] = image_result.get('success', 0)
             self.stats['image_failed'] = image_result.get('failed', 0)
@@ -143,7 +152,9 @@ class DocumentPipeline:
             print("Stage 4: Archive Intermediate Files")
             print("=" * 60)
 
+            t4_start = datetime.now()
             archive_result = self.archive_stage.run()
+            self.stats['stage_times']['archive'] = (datetime.now() - t4_start).total_seconds()
 
             self.stats['archive_success'] = archive_result.get('success', 0)
             self.stats['archive_failed'] = archive_result.get('failed', 0)
@@ -168,27 +179,48 @@ class DocumentPipeline:
 
     def _print_summary(self):
         """打印执行摘要"""
-        duration = "N/A"
+        total_duration = "N/A"
         if self.stats['start_time'] and self.stats['end_time']:
             delta = self.stats['end_time'] - self.stats['start_time']
-            duration = f"{delta.total_seconds():.1f} s"
+            total_duration = f"{delta.total_seconds():.1f} s"
+
+        # 各阶段用时
+        st = self.stats.get('stage_times', {})
+
+        # Token 统计（基于 Kimi 成功处理的文件数）
+        kimi_success = self.stats['kimi_success']
+        token_stats = self.kimi_stage.token_stats if hasattr(self.kimi_stage, 'token_stats') else {}
 
         print("\n" + "=" * 60)
         print("Pipeline Execution Summary")
         print("=" * 60)
-        print(f"Total Duration: {duration}")
         print(f"Total Files: {self.stats['total_files']}")
         print()
         print("Stage 1 - MinerU Parsing:")
         print(f"  Success: {self.stats['mineru_success']}, Failed: {self.stats['mineru_failed']}")
+        print(f"  Duration: {st.get('mineru', 0):.1f} s")
         print("Stage 2 - Kimi Processing:")
         print(f"  Success: {self.stats['kimi_success']}, Failed: {self.stats['kimi_failed']}")
+        print(f"  Duration: {st.get('kimi', 0):.1f} s")
         print("Stage 3 - Image Processing:")
         print(f"  Success: {self.stats['image_success']}, Failed: {self.stats['image_failed']}")
+        print(f"  Duration: {st.get('image', 0):.1f} s")
         print("Stage 4 - Archive:")
         archive_success = self.stats.get('archive_success', 0)
         archive_failed = self.stats.get('archive_failed', 0)
         print(f"  Success: {archive_success}, Failed: {archive_failed}")
+        print(f"  Duration: {st.get('archive', 0):.1f} s")
+        print()
+        if kimi_success > 0 and token_stats:
+            avg_in = token_stats.get('total_prompt_tokens', 0) / kimi_success
+            avg_out = token_stats.get('total_completion_tokens', 0) / kimi_success
+            avg_total = token_stats.get('total_tokens', 0) / kimi_success
+            print("Avg Token Usage per Document (Kimi Stage):")
+            print(f"  Input:    {avg_in:,.0f}")
+            print(f"  Output:   {avg_out:,.0f}")
+            print(f"  Total:    {avg_total:,.0f}")
+            print()
+        print(f"Total Duration: {total_duration}")
         print("=" * 60)
 
 

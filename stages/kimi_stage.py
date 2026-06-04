@@ -34,7 +34,7 @@ class KimiStage:
         return """
 不良报告-硬件类模板结构：
 
-# 不良项目：Y年M月某车型XX不良
+# 不良项目：YYYY年MM月某车型XX不良
 
 ## 第一部分：发生状况
 

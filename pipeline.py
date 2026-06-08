@@ -3,9 +3,8 @@
 集成 MinerU 解析、Kimi 整理、图片处理三个阶段
 """
 import sys
-import time
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 from datetime import datetime
 
 from config import Config
@@ -112,8 +111,8 @@ class DocumentPipeline:
             print("Stage 2: Kimi Document Processing")
             print("=" * 60)
 
-            # Get MinerU Output markdown files
-            mineru_md_files = list(self.config.MINERU_OUTPUT_DIR.rglob("*.md"))
+            # Use only Markdown files produced by this run.
+            mineru_md_files = [Path(p) for p in mineru_result.get('output_files', [])]
 
             t2_start = datetime.now()
             kimi_result = self.kimi_stage.run(
@@ -133,8 +132,8 @@ class DocumentPipeline:
             print("Stage 3: Image Processing and Link Update")
             print("=" * 60)
 
-            # Get Kimi Output files to process
-            kimi_output_files = list(self.config.KIMI_OUTPUT_DIR.rglob("*.md"))
+            # Use only Kimi files produced by this run.
+            kimi_output_files = [Path(p) for p in kimi_result.get('output_files', [])]
 
             t3_start = datetime.now()
             image_result = self.image_stage.run(
@@ -146,6 +145,9 @@ class DocumentPipeline:
 
             self.stats['image_success'] = image_result.get('success', 0)
             self.stats['image_failed'] = image_result.get('failed', 0)
+
+            if self.stats['image_success'] == 0:
+                raise PipelineError("Image Processing Stage has no successful files, Pipeline aborted")
 
             # Stage 4: Archive intermediate files
             print("\n" + "=" * 60)

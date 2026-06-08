@@ -120,22 +120,33 @@ class ImageStage:
 
         return '\n'.join(result_lines)
 
-    def _move_images(self, mineru_output_dir: Path, target_folder: Path) -> int:
-        """移动图片文件到目标目录"""
-        moved_count = 0
+    def _get_source_stem(self, md_file: Path) -> str:
+        """从 Kimi 输出文件名还原 MinerU 输出目录名。"""
+        stem = md_file.stem
+        prefix = "processed_"
+        return stem[len(prefix):] if stem.startswith(prefix) else stem
 
-        # 遍历所有子目录查找 images 文件夹
-        for images_dir in mineru_output_dir.rglob("images"):
-            if images_dir.is_dir():
-                for image_file in images_dir.iterdir():
-                    if image_file.is_file():
-                        target_path = target_folder / image_file.name
-                        try:
-                            shutil.move(str(image_file), str(target_path))
-                            moved_count += 1
-                            print(f"  移动图片: {image_file.name}")
-                        except Exception as e:
-                            print(f"  移动图片失败 {image_file.name}: {e}")
+    def _move_images_for_file(self, mineru_output_dir: Path, source_stem: str, target_folder: Path) -> int:
+        """移动单个文档对应的图片文件到独立目录。"""
+        moved_count = 0
+        images_dir = mineru_output_dir / source_stem / "images"
+
+        if not images_dir.is_dir():
+            print(f"  未找到图片目录: {images_dir}")
+            return moved_count
+
+        doc_target_folder = target_folder / source_stem
+        doc_target_folder.mkdir(parents=True, exist_ok=True)
+
+        for image_file in images_dir.iterdir():
+            if image_file.is_file():
+                target_path = doc_target_folder / image_file.name
+                try:
+                    shutil.move(str(image_file), str(target_path))
+                    moved_count += 1
+                    print(f"  移动图片: {source_stem}/{image_file.name}")
+                except Exception as e:
+                    print(f"  移动图片失败 {image_file.name}: {e}")
 
         return moved_count
 
@@ -143,7 +154,7 @@ class ImageStage:
         self,
         md_file: Path,
         mineru_output_dir: Path,
-        target_folder_name: str,
+        image_url_prefix: Optional[str],
         final_output_dir: Path
     ) -> Dict:
         """处理单个 Markdown 文件"""
@@ -162,9 +173,9 @@ class ImageStage:
                 print(f"  未找到不良项目标题，跳过内容处理")
 
             # 更新图片链接（仅在配置了图片服务器时）
-            if target_folder_name and self.config.IMAGE_BASE_URL:
+            if image_url_prefix:
                 pattern = r'!\[\]\(\s*images/(.*?)\s*\)'
-                replacement = f'![]({self.config.IMAGE_BASE_URL}/{target_folder_name}/\\1)'
+                replacement = f'![]({image_url_prefix}/\\1)'
                 content = re.sub(pattern, replacement, content)
 
             # 保存最终文件，根据 OUTPUT_FORMAT 决定扩展名
@@ -240,25 +251,25 @@ class ImageStage:
         print(f"最终输出目录: {final_output_dir}")
         print(f"=" * 60)
 
-        # 移动图片
-        print("\n[步骤1/2] 移动图片文件...")
-        if enable_image_processing:
-            images_moved = self._move_images(mineru_output_dir, target_folder)
-        else:
-            images_moved = 0
-            print("  跳过图片移动")
-        self.stats['images_moved'] = images_moved
-        print(f"✓ 移动了 {images_moved} 个图片文件")
-
-        # 处理 Markdown 文件
-        print("\n[步骤2/2] 处理 Markdown 文件...")
+        # 移动图片并处理 Markdown 文件
+        print("\n[步骤1/2] 移动图片文件")
+        print("[步骤2/2] 处理 Markdown 文件")
+        images_moved = 0
         results = []
         for i, md_file in enumerate(kimi_output_files, 1):
             print(f"\n[{i}/{len(kimi_output_files)}] 处理: {md_file.name}")
+            source_stem = self._get_source_stem(md_file)
+
+            if enable_image_processing:
+                images_moved += self._move_images_for_file(mineru_output_dir, source_stem, target_folder)
+                image_url_prefix = f"{self.config.IMAGE_BASE_URL.rstrip('/')}/{target_folder_name}/{source_stem}"
+            else:
+                image_url_prefix = None
+
             result = self._process_single_file(
                 md_file,
                 mineru_output_dir,
-                target_folder_name,
+                image_url_prefix,
                 final_output_dir
             )
             results.append(result)
@@ -269,6 +280,7 @@ class ImageStage:
 
         self.stats['success'] = success_count
         self.stats['failed'] = failed_count
+        self.stats['images_moved'] = images_moved
 
         print(f"\n{'='*60}")
         print(f"图片处理完成: 成功 {success_count}, 失败 {failed_count}")

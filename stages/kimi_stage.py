@@ -238,7 +238,7 @@ class KimiStage:
             return {
                 'file': file_path.name,
                 'status': 'success',
-                'output': output_filename
+                'output': str(output_path)
             }
 
         except Exception as e:
@@ -320,5 +320,7 @@ class KimiStage:
 
         return {
             'success': success_count,
-            'failed': failed_count
+            'failed': failed_count,
+            'output_files': [r['output'] for r in results if r['status'] == 'success'],
+            'output_dir': str(batch_output_dir)
         }

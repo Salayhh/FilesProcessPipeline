@@ -2,11 +2,10 @@
 Pipeline Stage 1: MinerU 文档解析
 负责调用 MinerU API 将 PDF/Word/PPT/图片等文档解析为 Markdown
 """
-import os
 import time
 import zipfile
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict, Optional, Tuple
 import requests
 
 from config import Config
@@ -95,7 +94,17 @@ class MinerUStage:
         result = self._make_request("GET", endpoint)
         return result["data"]
 
-    def _download_result(self, zip_url: str, output_dir: Path, file_name: str) -> bool:
+    def _extract_zip_safely(self, zip_path: Path, extract_dir: Path):
+        """安全解压 zip，避免压缩包写出目标目录。"""
+        root = extract_dir.resolve()
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            for member in zip_ref.infolist():
+                target_path = (extract_dir / member.filename).resolve()
+                if target_path != root and root not in target_path.parents:
+                    raise MinerUAPIError(f"Zip 文件包含非法路径: {member.filename}")
+            zip_ref.extractall(extract_dir)
+
+    def _download_result(self, zip_url: str, output_dir: Path, file_name: str) -> Optional[Path]:
         """下载并解压解析结果"""
         try:
             base_name = Path(file_name).stem
@@ -107,30 +116,38 @@ class MinerUStage:
 
             if response.status_code != 200:
                 print(f"  ✗ 下载失败: HTTP {response.status_code}")
-                return False
+                return None
 
             zip_path = extract_dir / "result.zip"
             with open(zip_path, 'wb') as f:
                 f.write(response.content)
 
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(extract_dir)
-
+            self._extract_zip_safely(zip_path, extract_dir)
             zip_path.unlink()
 
             # 重命名 full.md 为与文件夹同名的文件
             full_md_path = extract_dir / "full.md"
+            output_md_path = None
             if full_md_path.exists():
                 new_md_path = extract_dir / f"{base_name}.md"
                 full_md_path.rename(new_md_path)
+                output_md_path = new_md_path
                 print(f"  ✓ 已重命名: full.md -> {base_name}.md")
+            else:
+                md_files = sorted(extract_dir.rglob("*.md"))
+                if md_files:
+                    output_md_path = md_files[0]
+
+            if not output_md_path:
+                print(f"  ✗ 下载结果中未找到 Markdown 文件: {extract_dir}")
+                return None
 
             print(f"  ✓ 下载完成: {extract_dir}")
-            return True
+            return output_md_path
 
         except Exception as e:
             print(f"  ✗ 下载异常: {str(e)}")
-            return False
+            return None
 
     def _collect_files(self, input_dir: Path) -> List[Path]:
         """收集输入文件"""
@@ -196,6 +213,10 @@ class MinerUStage:
             success = self._upload_file(str(fp), url)
             upload_success.append(success)
 
+        uploaded_files = [fp for fp, success in zip(files, upload_success) if success]
+        uploaded_file_names = {fp.name for fp in uploaded_files}
+        upload_failed_count = len(files) - len(uploaded_files)
+
         if not any(upload_success):
             print("✗ 所有文件上传失败")
             return {'success': 0, 'failed': len(files)}
@@ -206,16 +227,25 @@ class MinerUStage:
 
         completed_files = {}
         failed_files = {}
+        poll_start = time.monotonic()
+        query_error_count = 0
 
         while True:
+            if time.monotonic() - poll_start > self.config.MINERU_MAX_POLL_TIME:
+                print(f"  ✗ 轮询超时: 超过 {self.config.MINERU_MAX_POLL_TIME} 秒")
+                break
+
             try:
                 data = self._query_batch_results(batch_id)
+                query_error_count = 0
                 results = data.get("extract_result", [])
 
                 all_done = True
                 for r in results:
                     state = r.get("state", "")
                     file_name = r.get("file_name", "")
+                    if file_name not in uploaded_file_names:
+                        continue
 
                     if state == "done":
                         if file_name not in completed_files:
@@ -228,11 +258,12 @@ class MinerUStage:
                     else:
                         all_done = False
 
-                if all_done and len(results) == len(files):
+                finished_count = len(completed_files) + len(failed_files)
+                if all_done and finished_count >= len(uploaded_files):
                     print(f"\n✓ 所有任务处理完成")
                     break
 
-                total = len(files)
+                total = len(uploaded_files)
                 done = len(completed_files)
                 failed = len(failed_files)
                 progress = (done + failed) / total * 100 if total > 0 else 0
@@ -241,7 +272,11 @@ class MinerUStage:
                 time.sleep(self.config.MINERU_POLL_INTERVAL)
 
             except MinerUAPIError as e:
+                query_error_count += 1
                 print(f"  ✗ 查询失败: {e}")
+                if query_error_count >= self.config.MINERU_MAX_QUERY_ERRORS:
+                    print(f"  ✗ 连续查询失败超过 {self.config.MINERU_MAX_QUERY_ERRORS} 次，停止轮询")
+                    break
                 time.sleep(self.config.MINERU_POLL_INTERVAL)
                 continue
 
@@ -249,18 +284,30 @@ class MinerUStage:
         print("\n[步骤4/4] 下载解析结果...")
 
         download_count = 0
+        download_failed_count = 0
+        output_files = []
         for file_name, result in completed_files.items():
             zip_url = result.get("full_zip_url", "")
             if zip_url:
-                if self._download_result(zip_url, output_dir, file_name):
+                output_file = self._download_result(zip_url, output_dir, file_name)
+                if output_file:
                     download_count += 1
+                    output_files.append(str(output_file))
+                else:
+                    download_failed_count += 1
+            else:
+                download_failed_count += 1
+
+        unresolved_count = max(0, len(uploaded_files) - len(completed_files) - len(failed_files))
+        failed_count = upload_failed_count + len(failed_files) + download_failed_count + unresolved_count
 
         print(f"\n{'='*60}")
-        print(f"MinerU 处理完成: 成功 {download_count}, 失败 {len(failed_files)}")
+        print(f"MinerU 处理完成: 成功 {download_count}, 失败 {failed_count}")
         print(f"结果保存在: {output_dir}")
         print(f"{'='*60}")
 
         return {
             'success': download_count,
-            'failed': len(failed_files)
+            'failed': failed_count,
+            'output_files': output_files
         }

@@ -10,6 +10,14 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 
+def get_int_env(name: str, default: int) -> int:
+    """读取整数环境变量；未设置或留空时使用默认值。"""
+    value = os.getenv(name)
+    if not value:
+        return default
+    return int(value)
+
+
 class Config:
     """统一配置类"""
 
@@ -19,9 +27,6 @@ class Config:
     MINERU_OUTPUT_DIR = BASE_DIR / "mineru_output"
     KIMI_OUTPUT_DIR = BASE_DIR / "kimi_output"
     OUTPUT_DIR = BASE_DIR / "output"
-
-    # 数据归档目录
-    DATA_DIR = BASE_DIR / "data"
 
     # 数据归档目录
     DATA_DIR = BASE_DIR / "data"
@@ -37,14 +42,16 @@ class Config:
     MINERU_LANGUAGE = "ch"
     MINERU_MAX_FILES_PER_BATCH = 200
     MINERU_POLL_INTERVAL = 10  # 秒
+    MINERU_MAX_POLL_TIME = get_int_env("MINERU_MAX_POLL_TIME", 3600)  # 秒
+    MINERU_MAX_QUERY_ERRORS = get_int_env("MINERU_MAX_QUERY_ERRORS", 10)
 
     # Kimi API 配置
     KIMI_API_KEY = os.getenv("KIMI_API_KEY")
     KIMI_MODEL = os.getenv("KIMI_MODEL", "kimi-k2.5")
     KIMI_BASE_URL = os.getenv("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
-    KIMI_TIMEOUT = int(os.getenv("KIMI_TIMEOUT", "300"))  # 秒
-    KIMI_MAX_RETRIES = int(os.getenv("KIMI_MAX_RETRIES", "2"))
-    KIMI_RETRY_DELAY = int(os.getenv("KIMI_RETRY_DELAY", "5"))  # 秒
+    KIMI_TIMEOUT = get_int_env("KIMI_TIMEOUT", 300)  # 秒
+    KIMI_MAX_RETRIES = get_int_env("KIMI_MAX_RETRIES", 2)
+    KIMI_RETRY_DELAY = get_int_env("KIMI_RETRY_DELAY", 5)  # 秒
 
     # 图片&文档处理配置
     IMAGE_BASE_URL = os.getenv("IMAGE_BASE_URL", "")

@@ -19,6 +19,8 @@ cp .env.example .env
 # MinerU API 配置
 MINERU_BASE_URL=https://mineru.net/api/v4
 MINERU_API_TOKEN=your_mineru_token_here
+MINERU_MAX_POLL_TIME=3600
+MINERU_MAX_QUERY_ERRORS=10
 
 # Kimi API 配置
 KIMI_API_KEY=sk-your_kimi_api_key_here
@@ -140,6 +142,16 @@ MINERU_ENABLE_FORMULA = False # 是否开启公式识别
 MINERU_LANGUAGE = "ch"        # 文档语言
 ```
 
+在 `.env` 中可以配置 MinerU 轮询保护：
+
+```env
+MINERU_MAX_POLL_TIME=3600
+MINERU_MAX_QUERY_ERRORS=10
+```
+
+- `MINERU_MAX_POLL_TIME`：单个批次最大轮询秒数，默认 3600 秒
+- `MINERU_MAX_QUERY_ERRORS`：连续查询失败上限，默认 10 次
+
 ### Kimi 配置
 
 在 `.env` 中可以配置 Kimi API 的超时和重试：
@@ -169,7 +181,7 @@ IMAGE_TARGET_DIR=/path/to/pic
 - `IMAGE_BASE_URL`：图片服务器访问 URL 前缀
 - `IMAGE_TARGET_DIR`：图片文件物理存放路径
 
-若两者任一留空，Pipeline 将跳过图片移动和链接更新步骤，仅保留 Markdown 内容处理。
+若两者任一留空，Pipeline 将跳过图片移动和链接更新步骤，仅保留 Markdown 内容处理。启用图片处理时，图片会按批次和文档名隔离保存，链接格式为 `{IMAGE_BASE_URL}/{timestamp}/{document_name}/{image_name}`。
 
 ## 故障排查
 

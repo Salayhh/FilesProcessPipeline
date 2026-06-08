@@ -13,9 +13,9 @@ class ArchiveStage:
     """归档阶段处理器"""
 
     def __init__(self):
-        self.timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        self.data_dir = Path("./data")
-        self.archive_dir = self.data_dir / self.timestamp
+        self.timestamp = None
+        self.data_dir = Config.DATA_DIR
+        self.archive_dir = None
 
     def run(self, dirs_to_archive: Optional[List[Path]] = None) -> dict:
         """
@@ -33,6 +33,9 @@ class ArchiveStage:
                 Config.KIMI_OUTPUT_DIR,
                 Config.MINERU_OUTPUT_DIR,
             ]
+
+        self.timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        self.archive_dir = self.data_dir / self.timestamp
 
         print("\n" + "=" * 60)
         print("归档阶段: 归档中间文件")

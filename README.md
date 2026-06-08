@@ -24,6 +24,9 @@ MINERU_API_TOKEN=your_mineru_token_here
 KIMI_API_KEY=sk-your_kimi_api_key_here
 KIMI_MODEL=kimi-k2.5
 KIMI_BASE_URL=https://api.moonshot.cn/v1
+KIMI_TIMEOUT=300
+KIMI_MAX_RETRIES=2
+KIMI_RETRY_DELAY=5
 
 # 图片处理配置（可选，留空则跳过图片移动和链接更新，不影响文档结构化功能）
 IMAGE_BASE_URL=http://your-server/pic
@@ -136,6 +139,22 @@ MINERU_ENABLE_TABLE = True    # 是否开启表格识别
 MINERU_ENABLE_FORMULA = False # 是否开启公式识别
 MINERU_LANGUAGE = "ch"        # 文档语言
 ```
+
+### Kimi 配置
+
+在 `.env` 中可以配置 Kimi API 的超时和重试：
+
+```env
+KIMI_TIMEOUT=300
+KIMI_MAX_RETRIES=2
+KIMI_RETRY_DELAY=5
+```
+
+- `KIMI_TIMEOUT`：单次 Kimi API 调用超时时间，默认 300 秒
+- `KIMI_MAX_RETRIES`：单个文档处理失败后的重试次数，默认 2 次
+- `KIMI_RETRY_DELAY`：每次重试前等待秒数，默认 5 秒
+
+默认配置下，每个文档最多会尝试 3 次：首次调用 + 2 次重试。
 
 ### 图片处理配置
 

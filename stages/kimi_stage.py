@@ -26,7 +26,9 @@ class KimiStage:
         """创建 Kimi API 客户端"""
         return OpenAI(
             api_key=self.config.KIMI_API_KEY,
-            base_url=self.config.KIMI_BASE_URL
+            base_url=self.config.KIMI_BASE_URL,
+            timeout=self.config.KIMI_TIMEOUT,
+            max_retries=0,
         )
 
     def _load_template_structure(self) -> str:
@@ -200,9 +202,24 @@ class KimiStage:
                     'error': '文件内容为空'
                 }
 
-            # 调用 Kimi API
-            print(f"  正在调用 Kimi API 处理...")
-            result = self._call_kimi_api(content, file_path.name)
+            # 调用 Kimi API，失败时按配置重试
+            max_attempts = max(1, self.config.KIMI_MAX_RETRIES + 1)
+            last_error = None
+            result = None
+
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    print(f"  正在调用 Kimi API 处理...（第 {attempt}/{max_attempts} 次）")
+                    result = self._call_kimi_api(content, file_path.name)
+                    break
+                except Exception as e:
+                    last_error = e
+                    if attempt < max_attempts:
+                        print(f"  Kimi API 调用失败，{self.config.KIMI_RETRY_DELAY} 秒后重试: {e}")
+                        time.sleep(self.config.KIMI_RETRY_DELAY)
+
+            if result is None:
+                raise last_error
 
             # 更新 Token 统计
             self.token_stats['total_prompt_tokens'] += result['prompt_tokens']
@@ -264,6 +281,8 @@ class KimiStage:
         print(f"输入文件数: {len(md_files)}")
         print(f"输出目录: {batch_output_dir}")
         print(f"模型: {self.config.KIMI_MODEL}")
+        print(f"超时时间: {self.config.KIMI_TIMEOUT} 秒")
+        print(f"失败重试: {self.config.KIMI_MAX_RETRIES} 次")
         print(f"=" * 60)
 
         # 初始化客户端

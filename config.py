@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# 加载环境变量（override=True 确保 .env 值覆盖系统环境变量）
-load_dotenv(override=True)
+# 加载环境变量
+load_dotenv()
 
 
 def get_int_env(name: str, default: int) -> int:

@@ -1,221 +1,247 @@
 # 文档结构化处理 Pipeline
 
-这是一个文档预处理 Pipeline，整合 MinerU 文档解析、Kimi 文档整理、图片处理和归档四个阶段，将 PDF/Word/PPT/图片等文档自动转换为结构化 Markdown 文档。
+这是一个 Python 文档结构化处理 Pipeline，用于将 PDF、Word、PPT、图片、HTML 等输入文件依次经过 MinerU 解析、Kimi 整理、图片链接处理和归档，最终生成结构化 Markdown 或文本结果。
+
+完整流程会调用外部 API，并在结束时归档 `input/`、`mineru_output/`、`kimi_output/`。运行前请确认 `.env` 和 `input/` 中的文件无误。
 
 ## 快速开始
 
-### 1. 配置环境变量
+### 1. 安装依赖
 
-复制 `.env.example` 为 `.env`，并填写你的 API Token：
+建议在虚拟环境中安装：
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+依赖包括：
+
+- `requests`：调用 MinerU API 和下载解析结果
+- `openai`：以 OpenAI SDK 兼容方式调用 Kimi API
+- `python-dotenv`：读取 `.env`
+
+### 2. 配置环境变量
+
+复制 `.env.example` 为 `.env`，并填写 API Token：
 
 ```bash
 cp .env.example .env
-# 编辑 .env 文件，填入你的 API Token
 ```
 
-`.env` 文件内容：
+必填配置：
 
 ```env
-# MinerU API 配置
 MINERU_BASE_URL=https://mineru.net/api/v4
 MINERU_API_TOKEN=your_mineru_token_here
-MINERU_MAX_POLL_TIME=3600
-MINERU_MAX_QUERY_ERRORS=10
-
-# Kimi API 配置
 KIMI_API_KEY=sk-your_kimi_api_key_here
 KIMI_MODEL=kimi-k2.5
 KIMI_BASE_URL=https://api.moonshot.cn/v1
+```
+
+可选配置：
+
+```env
+MINERU_MAX_POLL_TIME=3600
+MINERU_MAX_QUERY_ERRORS=10
 KIMI_TIMEOUT=300
 KIMI_MAX_RETRIES=2
 KIMI_RETRY_DELAY=5
-
-# 图片处理配置（可选，留空则跳过图片移动和链接更新，不影响文档结构化功能）
 IMAGE_BASE_URL=http://your-server/pic
 IMAGE_TARGET_DIR=/path/to/pic
+OUTPUT_FORMAT=md
 ```
 
-### 2. 准备输入文件
+### 3. 准备输入文件
 
-将待处理的文档放入 `./input/` 目录：
+将待处理文件放入 `input/`：
 
 ```bash
 mkdir -p input
 cp your-document.pdf input/
 ```
 
-> **提示**：程序首次运行时会自动创建 `input/`、`mineru_output/`、`kimi_output/`、`output/`、`data/` 等必要目录，无需手动创建。
+程序运行时会自动创建 `input/`、`mineru_output/`、`kimi_output/`、`output/`、`data/` 等目录。
 
-支持的文件格式：
-- PDF (`.pdf`)
-- Word (`.doc`, `.docx`)
-- PowerPoint (`.ppt`, `.pptx`)
-- 图片 (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.bmp`)
-- HTML (`.html`, `.htm`)
+支持的文件格式由 `Config.SUPPORTED_EXTENSIONS` 控制，当前包括：
 
-### 3. 运行 Pipeline
+- PDF：`.pdf`
+- Word：`.doc`、`.docx`
+- PowerPoint：`.ppt`、`.pptx`
+- 图片：`.png`、`.jpg`、`.jpeg`、`.jp2`、`.webp`、`.gif`、`.bmp`
+- HTML：`.html`、`.htm`
 
-```bash
-python pipeline.py
-```
+注意：当前文件收集按小写扩展名匹配，类似 `.PDF` 这种大写扩展名不会被处理。
 
-Pipeline 会依次执行四个阶段：
-1. **Stage 1**: MinerU 文档解析 - 将输入文件解析为 Markdown
-2. **Stage 2**: Kimi 文档整理 - 按照模板格式重新整理内容
-3. **Stage 3**: 图片处理和链接更新 - 移动图片并更新链接
-4. **Stage 4**: 归档中间文件 - 将中间文件归档到时间戳目录
-
-### 4. 查看结果
-
-最终结果保存在 `./output/` 目录：
+### 4. 运行 Pipeline
 
 ```bash
-ls output/
+python3 pipeline.py
 ```
+
+执行顺序：
+
+1. `MinerUStage`：上传并解析输入文件，下载解析结果到 `mineru_output/`
+2. `KimiStage`：读取本次 MinerU 产出的 Markdown，按不良报告模板整理到 `kimi_output/batch_{timestamp}/`
+3. `ImageStage`：处理标题结构、可选移动图片并更新链接，写入 `output/`
+4. `ArchiveStage`：归档中间目录到 `data/{YYYYMMDDHHMMSS}/`，并重新创建空目录
+
+最终文件保存在 `output/`。默认文件名保留 Kimi 输出前缀，例如 `processed_xxx.md`。
 
 ## 目录结构
 
-```
+```text
 .
-├─── input/                      # 输入文件目录
-├─── mineru_output/              # 阶段1: MinerU 解析输出
-├─── kimi_output/                # 阶段2: Kimi 处理输出
-├─── output/                     # 阶段3: 最终输出
-├─── data/                       # 阶段4: 归档目录
-│   └─── {timestamp}/
-│       ├─── input/
-│       ├─── mineru_output/
-│       └─── kimi_output/
-├─── stages/                     # Pipeline 阶段模块
-│   ├─── __init__.py
-│   ├─── base_stage.py           # Stage 基类
-│   ├─── mineru_stage.py         # 阶段1: MinerU 文档解析
-│   ├─── kimi_stage.py           # 阶段2: Kimi 文档处理
-│   ├─── image_stage.py          # 阶段3: 图片处理
-│   └─── archive_stage.py        # 阶段4: 归档
-├─── config.py                   # 统一配置模块
-├─── pipeline.py                 # Pipeline 主程序
-├─── CLAUDE.md                   # 项目文档
-├─── README.md                   # 用户文档
-└─── .env                        # 环境变量配置（用户创建）
-```
-
-## 执行流程
-
-```
-输入文件 (./input)
-    ↓
-[阶段1: MinerU 文档解析]
-    - 调用 MinerU API 解析 PDF/Word/PPT/图片
-    - 输出 Markdown + 图片到 ./mineru_output/
-    ↓
-[阶段2: Kimi 文档处理]
-    - 调用 Kimi API 按模板重新整理内容
-    - 输出处理后的 Markdown 到 ./kimi_output/
-    ↓
-[阶段3: 图片处理和链接更新]
-    - 移动图片到目标目录
-    - 处理 Markdown 内容：
-      - 提取"不良项目"标题拼接到二级标题
-      - 第二个二级标题起前面添加分隔符 +=+=+=
-      - 第二个二级标题起，将拼接后的标题拼接到下属三级标题上并删除该二级标题
-        （若该二级标题下没有三级标题，则保留原样）
-    - 更新图片链接
-    - 输出最终结果到 ./output/
-    ↓
-[阶段4: 归档中间文件]
-    - 归档 input/, kimi_output/, mineru_output/ 到 data/{timestamp}/
-    - 重新创建空的源目录
+├── input/                  # 输入文件目录
+├── mineru_output/          # MinerU 解析输出
+│   └── {filename}/
+│       ├── {filename}.md   # full.md 会被重命名
+│       └── images/
+├── kimi_output/            # Kimi 整理输出
+│   └── batch_{timestamp}/
+│       └── processed_*.md
+├── output/                 # 最终输出
+├── data/                   # 归档目录
+│   └── {YYYYMMDDHHMMSS}/
+│       ├── input/
+│       ├── mineru_output/
+│       └── kimi_output/
+├── stages/
+│   ├── base_stage.py
+│   ├── mineru_stage.py
+│   ├── kimi_stage.py
+│   ├── image_stage.py
+│   └── archive_stage.py
+├── tests/
+├── config.py
+├── pipeline.py
+├── .env.example
+└── README.md
 ```
 
 ## 配置说明
 
-### MinerU 配置
+### MinerU
 
-在 `config.py` 中可以修改 MinerU 的配置：
+代码内默认配置：
 
 ```python
-# MinerU 处理配置
-MINERU_MODEL_VERSION = "vlm"  # 可选: "pipeline", "vlm", "MinerU-HTML"
-MINERU_ENABLE_TABLE = True    # 是否开启表格识别
-MINERU_ENABLE_FORMULA = False # 是否开启公式识别
-MINERU_LANGUAGE = "ch"        # 文档语言
+MINERU_MODEL_VERSION = "vlm"
+MINERU_ENABLE_TABLE = True
+MINERU_ENABLE_FORMULA = False
+MINERU_LANGUAGE = "ch"
+MINERU_MAX_FILES_PER_BATCH = 200
+MINERU_POLL_INTERVAL = 10
 ```
 
-在 `.env` 中可以配置 MinerU 轮询保护：
+可通过 `.env` 控制的保护参数：
+
+- `MINERU_MAX_POLL_TIME`：单个批次最大轮询秒数，代码默认 `3600`
+- `MINERU_MAX_QUERY_ERRORS`：连续查询失败上限，代码默认 `10`
+
+MinerU 解析结果下载后会安全解压，防止 zip 路径穿越；如果压缩包内存在 `full.md`，会重命名为 `{原文件名}.md`。
+
+### Kimi
+
+可通过 `.env` 配置：
+
+- `KIMI_MODEL`：默认 `kimi-k2.5`
+- `KIMI_BASE_URL`：默认 `https://api.moonshot.cn/v1`
+- `KIMI_TIMEOUT`：未配置时代码默认 `600` 秒，`.env.example` 示例值为 `300`
+- `KIMI_MAX_RETRIES`：失败重试次数，代码默认 `2`
+- `KIMI_RETRY_DELAY`：重试等待秒数，未配置时代码默认 `10`
+
+默认最大尝试次数为 `首次调用 + KIMI_MAX_RETRIES`。Kimi 阶段会统计 prompt、completion 和 total token。
+
+### 图片和输出格式
 
 ```env
-MINERU_MAX_POLL_TIME=3600
-MINERU_MAX_QUERY_ERRORS=10
-```
-
-- `MINERU_MAX_POLL_TIME`：单个批次最大轮询秒数，默认 3600 秒
-- `MINERU_MAX_QUERY_ERRORS`：连续查询失败上限，默认 10 次
-
-### Kimi 配置
-
-在 `.env` 中可以配置 Kimi API 的超时和重试：
-
-```env
-KIMI_TIMEOUT=300
-KIMI_MAX_RETRIES=2
-KIMI_RETRY_DELAY=5
-```
-
-- `KIMI_TIMEOUT`：单次 Kimi API 调用超时时间，默认 300 秒
-- `KIMI_MAX_RETRIES`：单个文档处理失败后的重试次数，默认 2 次
-- `KIMI_RETRY_DELAY`：每次重试前等待秒数，默认 5 秒
-
-默认配置下，每个文档最多会尝试 3 次：首次调用 + 2 次重试。
-
-### 图片处理配置
-
-在 `.env` 中配置图片服务器（可选）：
-
-```env
-# 图片处理配置（留空则跳过图片移动和链接更新）
 IMAGE_BASE_URL=http://your-server/pic
 IMAGE_TARGET_DIR=/path/to/pic
+OUTPUT_FORMAT=md
 ```
 
-- `IMAGE_BASE_URL`：图片服务器访问 URL 前缀
-- `IMAGE_TARGET_DIR`：图片文件物理存放路径
+- `IMAGE_BASE_URL` 和 `IMAGE_TARGET_DIR` 必须同时配置，才会移动图片并更新链接
+- 任一为空时，图片移动和图片链接更新会跳过，但 Markdown 标题结构处理仍会执行
+- 图片会移动到 `{IMAGE_TARGET_DIR}/{timestamp}/{document_name}/`
+- 链接会更新为 `{IMAGE_BASE_URL}/{timestamp}/{document_name}/{image_name}`
+- `OUTPUT_FORMAT` 当前约定为 `md` 或 `txt`
 
-若两者任一留空，Pipeline 将跳过图片移动和链接更新步骤，仅保留 Markdown 内容处理。启用图片处理时，图片会按批次和文档名隔离保存，链接格式为 `{IMAGE_BASE_URL}/{timestamp}/{document_name}/{image_name}`。
+图片链接更新当前匹配 `![](images/xxx)` 形式。
+
+## 阶段行为
+
+### Stage 1: MinerU 文档解析
+
+- 从 `input/` 递归收集支持格式文件
+- 单批最多处理 `MINERU_MAX_FILES_PER_BATCH` 个文件，超出后只取排序后的前 200 个
+- 申请批量上传 URL，逐个上传文件
+- 轮询解析状态，直到完成、失败、超时或连续查询错误达到上限
+- 下载成功结果并返回本次实际产出的 Markdown 路径
+
+### Stage 2: Kimi 文档整理
+
+- 只处理 Stage 1 本次返回的 Markdown 文件，不扫描历史输出
+- 每次运行创建 `kimi_output/batch_{YYYYMMDD_HHMMSS}/`
+- 输出文件名为 `processed_{原Markdown文件名}.md`
+- 如果单个文档处理失败，会记录到 `failed_files`
+
+### Stage 3: 图片处理和链接更新
+
+- 从 Kimi 输出文件名反推 MinerU 输出目录，例如 `processed_doc.md` 对应 `mineru_output/doc/`
+- 提取一级标题 `# 不良项目：...` 或独立行 `不良项目：...`
+- 将不良项目标题拼接到二级标题
+- 从第二个二级标题起插入分隔符 `+=+=+=`
+- 第二个及之后的二级标题如果有下属三级标题，会把二级标题信息拼接到三级标题上，并删除该二级标题
+- 根据 `OUTPUT_FORMAT` 写入最终文件
+
+### Stage 4: 归档
+
+- 默认归档 `input/`、`kimi_output/`、`mineru_output/`
+- 归档位置为 `data/{YYYYMMDDHHMMSS}/`
+- 归档后重新创建空的源目录
+- Kimi 失败的原始输入文件会从归档目录复制回 `input/`，便于下次重跑
+
+## 测试
+
+当前单元测试不调用外部 API，可以直接运行：
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+已覆盖：
+
+- MinerU zip 安全解压拒绝路径穿越
+- 图片按文档子目录移动，并生成对应文档链接
+
+完整 Pipeline 依赖 MinerU/Kimi 网络 API 和真实 Token，且会归档输入和中间目录；不要把 `python3 pipeline.py` 当作普通单元测试命令。
 
 ## 故障排查
 
-### 常见问题
+### 缺少配置
 
-1. **导入错误**
-   ```bash
-   # 确保在虚拟环境中安装了依赖
-   pip install -r requirements.txt
-   ```
+`pipeline.py` 启动时会验证：
 
-2. **API Token 错误**
-   - 检查 `.env` 文件是否存在
-   - 确认 API Token 是否正确
+- `MINERU_API_TOKEN`
+- `KIMI_API_KEY`
 
-3. **目录权限错误**
-   - 确保程序有权限读写输入输出目录
+缺少任一配置会直接退出。
 
-### 调试模式
+### 未找到输入文件
 
-可以单独运行某个 stage 进行调试：
+确认文件位于 `input/` 下，且扩展名为当前支持的小写格式。
 
-```python
-# 测试 MinerU Stage
-from stages.mineru_stage import MinerUStage
+### 图片没有移动或链接未更新
 
-stage = MinerUStage()
-result = stage.run(
-    input_dir=Path("./input"),
-    output_dir=Path("./test_output")
-)
-print(result)
+确认 `.env` 同时配置了：
+
+```env
+IMAGE_BASE_URL=...
+IMAGE_TARGET_DIR=...
 ```
 
-## 许可证
+并确认 MinerU 输出目录中存在 `mineru_output/{document_name}/images/`。
 
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
+### API 调用失败
+
+检查 Token、网络、API 限流和模型配置。MinerU 与 Kimi 的网络错误属于正常失败路径，优先通过单个 Stage 或小样本文件排查。

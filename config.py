@@ -49,9 +49,9 @@ class Config:
     KIMI_API_KEY = os.getenv("KIMI_API_KEY")
     KIMI_MODEL = os.getenv("KIMI_MODEL", "kimi-k2.5")
     KIMI_BASE_URL = os.getenv("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
-    KIMI_TIMEOUT = get_int_env("KIMI_TIMEOUT", 300)  # 秒
+    KIMI_TIMEOUT = get_int_env("KIMI_TIMEOUT", 600)  # 秒
     KIMI_MAX_RETRIES = get_int_env("KIMI_MAX_RETRIES", 2)
-    KIMI_RETRY_DELAY = get_int_env("KIMI_RETRY_DELAY", 5)  # 秒
+    KIMI_RETRY_DELAY = get_int_env("KIMI_RETRY_DELAY", 10)  # 秒
 
     # 图片&文档处理配置
     IMAGE_BASE_URL = os.getenv("IMAGE_BASE_URL", "")

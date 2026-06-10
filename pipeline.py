@@ -124,8 +124,16 @@ class DocumentPipeline:
             self.stats['kimi_success'] = kimi_result.get('success', 0)
             self.stats['kimi_failed'] = kimi_result.get('failed', 0)
 
-            if self.stats['kimi_success'] == 0:
-                raise PipelineError("Kimi Organizing Stage has no successful files, Pipeline aborted")
+            if self.stats['kimi_success'] == 0 and self.stats['kimi_failed'] > 0:
+                raise PipelineError("Kimi Organizing Stage all failed, Pipeline aborted")
+
+            # 收集 Kimi 失败的文件对应的原始 input 文件，归档时保留
+            failed_stems = {Path(f).stem for f in kimi_result.get('failed_files', [])}
+            files_to_keep = []
+            for ext in self.config.SUPPORTED_EXTENSIONS:
+                for f in self.config.INPUT_DIR.rglob(f"*{ext}"):
+                    if f.stem in failed_stems:
+                        files_to_keep.append(f.relative_to(self.config.INPUT_DIR))
 
             # Stage 3: Image Processing and Link Update
             print("\n" + "=" * 60)
@@ -155,7 +163,7 @@ class DocumentPipeline:
             print("=" * 60)
 
             t4_start = datetime.now()
-            archive_result = self.archive_stage.run()
+            archive_result = self.archive_stage.run(files_to_keep=files_to_keep)
             self.stats['stage_times']['archive'] = (datetime.now() - t4_start).total_seconds()
 
             self.stats['archive_success'] = archive_result.get('success', 0)

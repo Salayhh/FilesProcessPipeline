@@ -17,12 +17,17 @@ class ArchiveStage:
         self.data_dir = Config.DATA_DIR
         self.archive_dir = None
 
-    def run(self, dirs_to_archive: Optional[List[Path]] = None) -> dict:
+    def run(
+        self,
+        dirs_to_archive: Optional[List[Path]] = None,
+        files_to_keep: Optional[List[Path]] = None,
+    ) -> dict:
         """
         执行归档操作
 
         Args:
             dirs_to_archive: 要归档的目录列表，默认归档 input, kimi_output, mineru_output
+            files_to_keep: 归档后需要保留在 INPUT_DIR 中的文件相对路径列表
 
         Returns:
             dict: 归档结果统计
@@ -80,6 +85,21 @@ class ArchiveStage:
                 print(f"[ERROR] {error_msg}")
                 result['failed'] += 1
                 result['errors'].append(error_msg)
+
+        # 将指定文件从归档目录复制回 INPUT_DIR
+        if files_to_keep and Config.INPUT_DIR in dirs_to_archive:
+            archived_input = self.archive_dir / Config.INPUT_DIR.name
+            kept_count = 0
+            for rel_path in files_to_keep:
+                src = archived_input / rel_path
+                dst = Config.INPUT_DIR / rel_path
+                if src.exists():
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(str(src), str(dst))
+                    kept_count += 1
+                    print(f"[KEEP] 保留文件: {rel_path}")
+            if kept_count:
+                print(f"[KEEP] 共保留 {kept_count} 个失败文件在 input/ 中")
 
         # 输出归档摘要
         print("-" * 60)

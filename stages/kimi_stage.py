@@ -322,5 +322,6 @@ class KimiStage:
             'success': success_count,
             'failed': failed_count,
             'output_files': [r['output'] for r in results if r['status'] == 'success'],
+            'failed_files': [r['file'] for r in results if r['status'] == 'failed'],
             'output_dir': str(batch_output_dir)
         }

@@ -43,6 +43,7 @@ output/*
 mineru_output/*
 kimi_output/*
 data/*
+runs/*
 prompt_test/
 process_test/
 

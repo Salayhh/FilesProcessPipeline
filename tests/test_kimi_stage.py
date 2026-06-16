@@ -1,94 +1,96 @@
-import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
-from config import Config
-from stages.kimi_stage import KimiStage
+from files_pipeline.models import DocumentRecord, KimiCompletion, RunContext, TokenUsage
+from files_pipeline.stages.kimi import KimiStage
+
+from tests.utils import make_settings
+
+
+class FakeKimiClient:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def complete(self, source_content, file_name):
+        self.calls.append((source_content, file_name))
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 class KimiStageTest(unittest.TestCase):
-    def test_run_processes_markdown_file_without_calling_real_api(self):
-        stage = KimiStage()
-
+    def test_run_writes_kimi_markdown_and_accumulates_tokens(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            input_file = temp_path / "3QC_report.md"
-            ignored_file = temp_path / "ignored.txt"
-            output_dir = temp_path / "kimi_output"
+            settings = make_settings(temp_path, kimi_retry_delay=0)
+            context = RunContext.create(settings.runs_dir, "run-1")
+            context.ensure_directories()
+            mineru_md = context.mineru_dir / "0001_doc" / "0001_doc.md"
+            mineru_md.parent.mkdir(parents=True)
+            mineru_md.write_text("原始内容\n![](images/a.png)\n", encoding="utf-8")
+            document = make_document(temp_path, context, mineru_md)
+            completion = KimiCompletion("# 不良项目：A", TokenUsage(10, 20, 30))
+            client = FakeKimiClient([completion])
 
-            input_file.write_text("原始内容\n![](images/a.png)\n", encoding="utf-8")
-            ignored_file.write_text("不是 Markdown 文件", encoding="utf-8")
+            result = KimiStage(settings, client=client).run(context, [document])
 
-            api_result = {
-                "content": "# 不良项目：2026年3QC不良\n\n整理后的内容",
-                "prompt_tokens": 10,
-                "completion_tokens": 20,
-                "total_tokens": 30,
-            }
+            self.assertEqual(result.success, 1)
+            self.assertEqual(result.failed, 0)
+            self.assertEqual(result.token_usage.total_tokens, 30)
+            self.assertEqual(client.calls, [("原始内容\n![](images/a.png)\n", "doc.pdf")])
+            self.assertEqual(document.kimi_markdown_path, context.kimi_dir / "0001_doc.md")
+            self.assertEqual(document.kimi_markdown_path.read_text(encoding="utf-8"), "# 不良项目：A")
 
-            with patch.object(stage, "_create_client", return_value=object()) as create_client:
-                with patch.object(stage, "_call_kimi_api", return_value=api_result) as call_kimi_api:
-                    result = stage.run([input_file, ignored_file], output_dir)
-
-            self.assertEqual(result["success"], 1)
-            self.assertEqual(result["failed"], 0)
-            self.assertEqual(result["failed_files"], [])
-            self.assertEqual(len(result["output_files"]), 1)
-
-            create_client.assert_called_once_with()
-            call_kimi_api.assert_called_once_with("原始内容\n![](images/a.png)\n", "3QC_report.md")
-
-            output_path = Path(result["output_files"][0])
-            self.assertEqual(output_path.name, "processed_3QC_report.md")
-            self.assertEqual(output_path.parent, Path(result["output_dir"]))
-            self.assertEqual(output_path.read_text(encoding="utf-8"), api_result["content"])
-
-            self.assertEqual(stage.token_stats["total_prompt_tokens"], 10)
-            self.assertEqual(stage.token_stats["total_completion_tokens"], 20)
-            self.assertEqual(stage.token_stats["total_tokens"], 30)
-
-
-@unittest.skipUnless(
-    os.getenv("RUN_KIMI_API_TEST") == "1" and bool(Config.KIMI_API_KEY),
-    "设置 RUN_KIMI_API_TEST=1 且配置 KIMI_API_KEY 后才运行真实 Kimi API 测试",
-)
-class KimiStageRealAPITest(unittest.TestCase):
-    def test_run_processes_markdown_file_with_real_kimi_api(self):
-        stage = KimiStage()
-
+    def test_run_retries_api_failure(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            input_file = temp_path / "3QC_real_api_test.md"
-            output_dir = temp_path / "kimi_output"
+            settings = make_settings(temp_path, kimi_max_retries=1, kimi_retry_delay=0)
+            context = RunContext.create(settings.runs_dir, "run-1")
+            context.ensure_directories()
+            mineru_md = context.mineru_dir / "0001_doc" / "0001_doc.md"
+            mineru_md.parent.mkdir(parents=True)
+            mineru_md.write_text("原始内容", encoding="utf-8")
+            document = make_document(temp_path, context, mineru_md)
+            client = FakeKimiClient([RuntimeError("busy"), KimiCompletion("ok", TokenUsage(1, 2, 3))])
 
-            input_file.write_text(
-                "\n".join(
-                    [
-                        "# 3QC 后盖划伤不良报告",
-                        "",
-                        "车型/机种：3QC",
-                        "不良现象：后盖表面有划伤。",
-                        "发生日期：2026年6月10日",
-                        "发生件数：1件",
-                    ]
-                ),
-                encoding="utf-8",
-            )
+            result = KimiStage(settings, client=client).run(context, [document])
 
-            result = stage.run([input_file], output_dir)
+            self.assertEqual(result.success, 1)
+            self.assertEqual(len(client.calls), 2)
+            self.assertEqual(result.token_usage.total_tokens, 3)
 
-            self.assertEqual(result["success"], 1)
-            self.assertEqual(result["failed"], 0)
-            self.assertEqual(len(result["output_files"]), 1)
+    def test_empty_markdown_is_failed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            settings = make_settings(temp_path)
+            context = RunContext.create(settings.runs_dir, "run-1")
+            context.ensure_directories()
+            mineru_md = context.mineru_dir / "0001_doc" / "0001_doc.md"
+            mineru_md.parent.mkdir(parents=True)
+            mineru_md.write_text("  ", encoding="utf-8")
+            document = make_document(temp_path, context, mineru_md)
+            client = FakeKimiClient([])
 
-            output_path = Path(result["output_files"][0])
-            self.assertTrue(output_path.exists())
-            output_content = output_path.read_text(encoding="utf-8")
-            self.assertIn("# 不良项目：", output_content)
-            self.assertGreater(len(output_content.strip()), 0)
-            self.assertGreater(stage.token_stats["total_tokens"], 0)
+            result = KimiStage(settings, client=client).run(context, [document])
+
+            self.assertEqual(result.success, 0)
+            self.assertEqual(result.failed, 1)
+            self.assertIn("文件内容为空", result.errors["0001_doc"])
+
+
+def make_document(temp_path, context, mineru_md):
+    return DocumentRecord(
+        source_id="0001_doc",
+        original_path=temp_path / "doc.pdf",
+        source_path=context.source_dir / "0001_doc.pdf",
+        original_name="doc.pdf",
+        original_stem="doc",
+        extension=".pdf",
+        mineru_markdown_path=mineru_md,
+    )
 
 
 if __name__ == "__main__":

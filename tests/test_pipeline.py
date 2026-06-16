@@ -1,0 +1,109 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+from files_pipeline.models import StageResult
+from files_pipeline.pipeline import PipelineError, archive_run, run_pipeline
+
+from tests.utils import make_settings
+
+
+class FakeStage:
+    def __init__(self, name, calls, writer):
+        self.name = name
+        self.calls = calls
+        self.writer = writer
+
+    def run(self, context, documents):
+        self.calls.append(self.name)
+        return self.writer(context, documents)
+
+
+class PipelineTest(unittest.TestCase):
+    def test_run_pipeline_orchestrates_stages_and_does_not_archive_input(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            settings = make_settings(temp_path)
+            input_dir = settings.input_dir
+            input_dir.mkdir()
+            source_file = input_dir / "Report.PDF"
+            source_file.write_bytes(b"source")
+            calls = []
+
+            def mineru_writer(context, documents):
+                output = context.mineru_dir / documents[0].source_id / f"{documents[0].source_id}.md"
+                output.parent.mkdir(parents=True)
+                output.write_text("mineru", encoding="utf-8")
+                documents[0].mineru_markdown_path = output
+                return StageResult(stage="mineru", success=1, output_files=[output])
+
+            def kimi_writer(context, documents):
+                output = context.kimi_dir / f"{documents[0].source_id}.md"
+                output.write_text("kimi", encoding="utf-8")
+                documents[0].kimi_markdown_path = output
+                return StageResult(stage="kimi", success=1, output_files=[output])
+
+            def render_writer(context, documents):
+                output = context.final_dir / f"{documents[0].source_id}.md"
+                output.write_text("final", encoding="utf-8")
+                documents[0].final_output_path = output
+                documents[0].status = "done"
+                return StageResult(stage="render", success=1, output_files=[output])
+
+            manifest = run_pipeline(
+                input_dir=input_dir,
+                run_id="run-1",
+                settings=settings,
+                mineru_stage=FakeStage("mineru", calls, mineru_writer),
+                kimi_stage=FakeStage("kimi", calls, kimi_writer),
+                render_stage=FakeStage("render", calls, render_writer),
+            )
+
+            self.assertEqual(calls, ["mineru", "kimi", "render"])
+            self.assertEqual(manifest.status, "success")
+            self.assertTrue(source_file.exists())
+            self.assertTrue((settings.runs_dir / "run-1" / "source" / "0001_Report.pdf").exists())
+            self.assertFalse((settings.data_dir / "run-1").exists())
+            self.assertIn("render", manifest.stages)
+
+    def test_run_pipeline_records_manifest_when_stage_aborts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            settings = make_settings(temp_path)
+            settings.input_dir.mkdir()
+            (settings.input_dir / "doc.pdf").write_bytes(b"source")
+
+            def failed_mineru(context, documents):
+                return StageResult(stage="mineru", success=0, failed=1, errors={"doc": "fail"})
+
+            with self.assertRaises(PipelineError):
+                run_pipeline(
+                    input_dir=settings.input_dir,
+                    run_id="run-1",
+                    settings=settings,
+                    mineru_stage=FakeStage("mineru", [], failed_mineru),
+                )
+
+            manifest_path = settings.runs_dir / "run-1" / "manifest.json"
+            self.assertTrue(manifest_path.exists())
+            content = manifest_path.read_text(encoding="utf-8")
+            self.assertIn('"status": "failed"', content)
+            self.assertIn("MinerU 阶段没有成功文件", content)
+
+    def test_archive_run_moves_only_requested_run_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            settings = make_settings(temp_path)
+            run_dir = settings.runs_dir / "run-1"
+            run_dir.mkdir(parents=True)
+            (run_dir / "manifest.json").write_text("{}", encoding="utf-8")
+
+            target = archive_run("run-1", settings=settings)
+
+            self.assertEqual(target, settings.data_dir / "run-1")
+            self.assertFalse(run_dir.exists())
+            self.assertTrue((target / "manifest.json").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

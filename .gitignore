@@ -45,3 +45,7 @@ kimi_output/*
 data/*
 prompt_test/
 process_test/
+
+.DS_Store
+.codex/
+docs/

@@ -15,8 +15,10 @@ class FakeMinerUClient:
     def __init__(self, zip_bytes: bytes):
         self.zip_bytes = zip_bytes
         self.uploaded = []
+        self.files = []
 
     def apply_upload_urls(self, files):
+        self.files = files
         return "batch-1", [f"https://upload/{item['name']}" for item in files]
 
     def upload_file(self, file_path, upload_url):
@@ -26,7 +28,8 @@ class FakeMinerUClient:
         return {
             "extract_result": [
                 {
-                    "file_name": self.uploaded[0][0],
+                    "file_name": self.files[0]["name"],
+                    "data_id": self.files[0].get("data_id", ""),
                     "state": "done",
                     "full_zip_url": "https://download/result.zip",
                 }
@@ -39,7 +42,22 @@ class FakeMinerUClient:
 
 class ShortUploadUrlClient(FakeMinerUClient):
     def apply_upload_urls(self, files):
+        self.files = files
         return "batch-1", ["https://upload/only-one"]
+
+
+class DataIdResultClient(FakeMinerUClient):
+    def query_batch_results(self, batch_id):
+        return {
+            "extract_result": [
+                {
+                    "file_name": "unexpected-name.pptx",
+                    "data_id": self.files[0]["data_id"],
+                    "state": "done",
+                    "full_zip_url": "https://download/result.zip",
+                }
+            ]
+        }
 
 
 class MinerUStageTest(unittest.TestCase):
@@ -111,6 +129,35 @@ class MinerUStageTest(unittest.TestCase):
             self.assertEqual(result.failed, 0)
             self.assertEqual(document.mineru_markdown_path, context.mineru_dir / "0001_doc" / "0001_doc.md")
             self.assertEqual(document.mineru_markdown_path.read_text(encoding="utf-8"), "# title")
+
+    def test_run_matches_result_by_data_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            settings = make_settings(temp_path, mineru_poll_interval=0)
+            context = RunContext.create(settings.runs_dir, "run-1")
+            context.ensure_directories()
+            source_path = context.source_dir / "0001_资料.pptx"
+            source_path.write_bytes(b"pptx")
+            document = DocumentRecord(
+                source_id="0001_资料",
+                original_path=temp_path / "资料.pptx",
+                source_path=source_path,
+                original_name="资料.pptx",
+                original_stem="资料",
+                extension=".pptx",
+            )
+            zip_path = temp_path / "result.zip"
+            with zipfile.ZipFile(zip_path, "w") as zip_file:
+                zip_file.writestr("full.md", "# title")
+            client = DataIdResultClient(zip_path.read_bytes())
+            stage = MinerUStage(settings, client=client)
+
+            result = stage.run(context, [document])
+
+            self.assertEqual(result.success, 1)
+            self.assertEqual(result.failed, 0)
+            self.assertEqual(client.files[0]["name"], "0001.pptx")
+            self.assertEqual(client.files[0]["data_id"], "0001")
 
     def test_run_marks_documents_without_upload_urls_failed(self):
         with tempfile.TemporaryDirectory() as temp_dir:

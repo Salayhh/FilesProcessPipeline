@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import re
 import shutil
+import time
 from datetime import datetime
 from pathlib import Path
 
 from files_pipeline.config import Settings
 from files_pipeline.models import DocumentRecord, RunContext, RunManifest, StageResult
+from files_pipeline.progress import format_duration
 from files_pipeline.stages.kimi import KimiStage
 from files_pipeline.stages.mineru import MinerUStage
 from files_pipeline.stages.render import RenderStage
@@ -26,18 +28,21 @@ def run_pipeline(
     kimi_stage: KimiStage | None = None,
     render_stage: RenderStage | None = None,
 ) -> RunManifest:
+    start = time.monotonic()
     settings = settings or Settings.from_env()
     missing = settings.missing_required_keys()
     if missing:
         raise PipelineError(f"缺少必要配置: {', '.join(missing)}")
 
     context = create_run_context(settings, run_id)
+    print(f"[Pipeline] 开始完整流程: run_id={context.run_id}", flush=True)
     context.ensure_directories()
     settings.ensure_directories()
 
     documents = prepare_documents(Path(input_dir) if input_dir else settings.input_dir, context, settings)
     if not documents:
         raise PipelineError(f"输入目录中没有支持的文件: {input_dir or settings.input_dir}")
+    print(f"[Pipeline] 输入文件: {len(documents)} 个, manifest={context.manifest_path}", flush=True)
 
     manifest = RunManifest.create(context.run_id, documents)
     manifest.save(context.manifest_path)
@@ -54,6 +59,7 @@ def run_pipeline(
 
         manifest.status = "success"
         manifest.save(context.manifest_path)
+        print(f"[Pipeline] 完整流程完成: runs/{context.run_id}, 用时 {format_duration(time.monotonic() - start)}", flush=True)
         return manifest
     except Exception as exc:
         manifest.add_error(str(exc))
@@ -64,45 +70,55 @@ def run_pipeline(
 
 
 def run_parse(input_dir: Path | str | None = None, run_id: str | None = None, settings: Settings | None = None) -> RunManifest:
+    start = time.monotonic()
     settings = settings or Settings.from_env()
     missing = ["MINERU_API_TOKEN"] if not settings.mineru_api_token else []
     if missing:
         raise PipelineError(f"缺少必要配置: {', '.join(missing)}")
 
     context = create_run_context(settings, run_id)
+    print(f"[Pipeline] 开始 MinerU parse: run_id={context.run_id}", flush=True)
     context.ensure_directories()
     documents = prepare_documents(Path(input_dir) if input_dir else settings.input_dir, context, settings)
     if not documents:
         raise PipelineError(f"输入目录中没有支持的文件: {input_dir or settings.input_dir}")
+    print(f"[Pipeline] 输入文件: {len(documents)} 个, manifest={context.manifest_path}", flush=True)
     manifest = RunManifest.create(context.run_id, documents)
     result = MinerUStage(settings).run(context, documents)
     _record_or_abort(manifest, context, result, "MinerU 阶段没有成功文件")
     manifest.status = "parsed"
     manifest.save(context.manifest_path)
+    print(f"[Pipeline] MinerU parse 完成: runs/{context.run_id}, 用时 {format_duration(time.monotonic() - start)}", flush=True)
     return manifest
 
 
 def run_organize(run_id: str, settings: Settings | None = None) -> RunManifest:
+    start = time.monotonic()
     settings = settings or Settings.from_env()
     if not settings.kimi_api_key:
         raise PipelineError("缺少必要配置: KIMI_API_KEY")
     context = create_run_context(settings, run_id)
+    print(f"[Pipeline] 开始 Kimi organize: run_id={context.run_id}", flush=True)
     manifest = RunManifest.load(context.manifest_path)
     result = KimiStage(settings).run(context, manifest.documents)
     _record_or_abort(manifest, context, result, "Kimi 阶段没有成功文件")
     manifest.status = "organized"
     manifest.save(context.manifest_path)
+    print(f"[Pipeline] Kimi organize 完成: runs/{context.run_id}, 用时 {format_duration(time.monotonic() - start)}", flush=True)
     return manifest
 
 
 def run_render(run_id: str, settings: Settings | None = None) -> RunManifest:
+    start = time.monotonic()
     settings = settings or Settings.from_env()
     context = create_run_context(settings, run_id)
+    print(f"[Pipeline] 开始 render: run_id={context.run_id}", flush=True)
     manifest = RunManifest.load(context.manifest_path)
     result = RenderStage(settings).run(context, manifest.documents)
     _record_or_abort(manifest, context, result, "Render 阶段没有成功文件")
     manifest.status = "rendered"
     manifest.save(context.manifest_path)
+    print(f"[Pipeline] render 完成: runs/{context.run_id}, 用时 {format_duration(time.monotonic() - start)}", flush=True)
     return manifest
 
 
@@ -162,5 +178,17 @@ def safe_filename(value: str) -> str:
 def _record_or_abort(manifest: RunManifest, context: RunContext, result: StageResult, message: str) -> None:
     manifest.record_stage(result, context.run_dir)
     manifest.save(context.manifest_path)
+    _print_stage_summary(result)
     if result.success == 0:
         raise PipelineError(message)
+
+
+def _print_stage_summary(result: StageResult) -> None:
+    usage = result.token_usage
+    token_text = ""
+    if usage.total_tokens:
+        token_text = f", tokens prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}"
+    print(
+        f"[Pipeline] 阶段记录: {result.stage}, success={result.success}, failed={result.failed}{token_text}",
+        flush=True,
+    )

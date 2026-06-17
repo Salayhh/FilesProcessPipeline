@@ -38,6 +38,18 @@ def _get_int_env(name: str, default: int) -> int:
         raise ValueError(f"{name} 必须是整数，当前值: {value}") from exc
 
 
+def _get_bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    raise ValueError(f"{name} 必须是布尔值，当前值: {value}")
+
+
 @dataclass(frozen=True)
 class Settings:
     """Runtime settings loaded from `.env` and environment variables."""
@@ -49,7 +61,7 @@ class Settings:
 
     mineru_base_url: str
     mineru_api_token: str | None
-    mineru_model_version: str = "vlm"
+    mineru_model_version: str = "pipeline"
     mineru_enable_table: bool = True
     mineru_enable_formula: bool = False
     mineru_language: str = "ch"
@@ -99,6 +111,10 @@ class Settings:
             data_dir=root / "data",
             mineru_base_url=os.getenv("MINERU_BASE_URL", "https://mineru.net/api/v4"),
             mineru_api_token=os.getenv("MINERU_API_TOKEN") or None,
+            mineru_model_version=os.getenv("MINERU_MODEL_VERSION", "pipeline"),
+            mineru_enable_table=_get_bool_env("MINERU_ENABLE_TABLE", True),
+            mineru_enable_formula=_get_bool_env("MINERU_ENABLE_FORMULA", False),
+            mineru_language=os.getenv("MINERU_LANGUAGE", "ch"),
             mineru_max_poll_time=_get_int_env("MINERU_MAX_POLL_TIME", 3600),
             mineru_max_query_errors=_get_int_env("MINERU_MAX_QUERY_ERRORS", 10),
             kimi_api_key=os.getenv("KIMI_API_KEY") or None,

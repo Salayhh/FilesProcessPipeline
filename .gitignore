@@ -38,6 +38,7 @@ venv.bak/
 .env
 
 # 输入输出数据目录
+data
 input/*
 output/*
 mineru_output/*
@@ -50,3 +51,4 @@ process_test/
 .DS_Store
 .codex/
 docs/
+stages

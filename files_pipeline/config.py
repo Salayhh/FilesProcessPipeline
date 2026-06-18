@@ -95,6 +95,7 @@ class Settings:
     kimi_retry_delay: int = 10
     kimi_concurrency: int = 4
 
+    assets_base_dir: Path | None = None
     image_base_url: str = ""
     output_format: str = "md"
     section_separator: str = "+=+=+="
@@ -145,6 +146,7 @@ class Settings:
             kimi_max_retries=_get_int_env("KIMI_MAX_RETRIES", 2),
             kimi_retry_delay=_get_int_env("KIMI_RETRY_DELAY", 10),
             kimi_concurrency=_get_positive_int_env("KIMI_CONCURRENCY", 4),
+            assets_base_dir=_get_optional_path_env("ASSETS_DIR", root),
             image_base_url=os.getenv("IMAGE_BASE_URL", "").strip(),
             output_format=output_format,
             kimi_template_path=template_path,
@@ -162,3 +164,11 @@ class Settings:
         dirs = [self.input_dir, self.runs_dir, self.data_dir, *extra_dirs]
         for directory in dirs:
             directory.mkdir(parents=True, exist_ok=True)
+
+
+def _get_optional_path_env(name: str, root: Path) -> Path | None:
+    value = os.getenv(name, "").strip()
+    if not value:
+        return None
+    path = Path(os.path.expanduser(value))
+    return path if path.is_absolute() else root / path

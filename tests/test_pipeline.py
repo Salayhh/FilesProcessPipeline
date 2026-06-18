@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from files_pipeline.models import StageResult
-from files_pipeline.pipeline import PipelineError, archive_run, list_failed_documents, run_pipeline, run_retry_failed
+from files_pipeline.pipeline import PipelineError, archive_run, create_run_context, list_failed_documents, run_pipeline, run_retry_failed
 
 from tests.utils import make_settings
 
@@ -20,6 +20,15 @@ class FakeStage:
 
 
 class PipelineTest(unittest.TestCase):
+    def test_create_run_context_uses_custom_assets_dir(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            settings = make_settings(temp_path, assets_base_dir=temp_path / "custom-assets")
+
+            context = create_run_context(settings, "run-1")
+
+            self.assertEqual(context.assets_dir, temp_path / "custom-assets" / "run-1")
+
     def test_run_pipeline_orchestrates_stages_and_does_not_archive_input(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)

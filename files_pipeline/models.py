@@ -139,15 +139,16 @@ class RunContext:
     manifest_path: Path
 
     @classmethod
-    def create(cls, runs_dir: Path, run_id: str) -> "RunContext":
+    def create(cls, runs_dir: Path, run_id: str, assets_base_dir: Path | None = None) -> "RunContext":
         run_dir = runs_dir / run_id
+        assets_dir = assets_base_dir / run_id if assets_base_dir else run_dir / "assets"
         return cls(
             run_id=run_id,
             run_dir=run_dir,
             source_dir=run_dir / "source",
             mineru_dir=run_dir / "mineru",
             kimi_dir=run_dir / "kimi",
-            assets_dir=run_dir / "assets",
+            assets_dir=assets_dir,
             final_dir=run_dir / "final",
             manifest_path=run_dir / "manifest.json",
         )

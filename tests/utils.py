@@ -27,6 +27,7 @@ def make_settings(base_dir: Path, **overrides) -> Settings:
         "kimi_timeout": 600,
         "kimi_max_retries": 2,
         "kimi_retry_delay": 0,
+        "assets_base_dir": None,
         "image_base_url": "",
         "output_format": "md",
         "section_separator": "+=+=+=",

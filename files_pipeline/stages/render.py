@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 
@@ -69,9 +70,16 @@ class RenderStage:
             if self.settings.image_base_url:
                 prefix = f"{self.settings.image_base_url.rstrip('/')}/{context.run_id}/{document.source_id}"
             else:
-                prefix = f"../assets/{document.source_id}"
+                prefix = relative_link_prefix(context.final_dir, context.assets_dir / document.source_id)
             content = rewrite_image_links(content, document.source_id, prefix)
 
         output_path = context.final_dir / f"{document.source_id}.{self.settings.output_format}"
         output_path.write_text(content, encoding="utf-8")
         return output_path, images_copied
+
+
+def relative_link_prefix(from_dir: Path, target_dir: Path) -> str:
+    try:
+        return Path(os.path.relpath(target_dir, start=from_dir)).as_posix()
+    except ValueError:
+        return target_dir.as_posix()

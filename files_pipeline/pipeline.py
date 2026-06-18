@@ -210,7 +210,7 @@ def archive_run(run_id: str, settings: Settings | None = None) -> Path:
 
 def create_run_context(settings: Settings, run_id: str | None = None) -> RunContext:
     actual_run_id = run_id or datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    return RunContext.create(settings.runs_dir, actual_run_id)
+    return RunContext.create(settings.runs_dir, actual_run_id, settings.assets_base_dir)
 
 
 def prepare_documents(input_dir: Path, context: RunContext, settings: Settings) -> list[DocumentRecord]:

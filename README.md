@@ -57,11 +57,12 @@ KIMI_TIMEOUT=300
 KIMI_MAX_RETRIES=2
 KIMI_RETRY_DELAY=5
 KIMI_CONCURRENCY=4
+ASSETS_DIR=/your/custom/assets/root
 IMAGE_BASE_URL=http://your-server/pic
 OUTPUT_FORMAT=md
 ```
 
-`.env` 会覆盖系统环境变量。`OUTPUT_FORMAT` 只允许 `md` 或 `txt`。`KIMI_CONCURRENCY` 控制 Kimi 阶段并发处理文件数，必须是大于等于 1 的整数。
+`.env` 会覆盖系统环境变量。`OUTPUT_FORMAT` 只允许 `md` 或 `txt`。`KIMI_CONCURRENCY` 控制 Kimi 阶段并发处理文件数，必须是大于等于 1 的整数。`ASSETS_DIR` 留空时图片写入 `runs/{run_id}/assets/`，填写后图片写入 `ASSETS_DIR/{run_id}/`。
 
 ### 3. 准备输入文件
 
@@ -189,11 +190,19 @@ runs/{run_id}/mineru/{source_id}/images/*
 -> runs/{run_id}/assets/{source_id}/*
 ```
 
+如果配置了 `ASSETS_DIR`，图片会复制到：
+
+```text
+{ASSETS_DIR}/{run_id}/{source_id}/*
+```
+
 默认最终 Markdown 使用相对链接：
 
 ```md
 ![现象](../assets/{source_id}/image.png)
 ```
+
+配置 `ASSETS_DIR` 但未配置 `IMAGE_BASE_URL` 时，最终 Markdown 会使用从 `runs/{run_id}/final/` 指向该图片目录的相对链接。
 
 如果配置了 `IMAGE_BASE_URL`，最终 Markdown 使用绝对链接：
 

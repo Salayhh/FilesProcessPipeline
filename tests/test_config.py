@@ -17,6 +17,7 @@ class SettingsTest(unittest.TestCase):
                         "MINERU_API_TOKEN=file-mineru",
                         "KIMI_API_KEY=file-kimi",
                         "KIMI_MODEL=from-file",
+                        "ASSETS_DIR=custom-assets",
                         "OUTPUT_FORMAT=txt",
                     ]
                 ),
@@ -37,6 +38,7 @@ class SettingsTest(unittest.TestCase):
             self.assertEqual(settings.mineru_api_token, "file-mineru")
             self.assertEqual(settings.kimi_api_key, "file-kimi")
             self.assertEqual(settings.kimi_model, "from-file")
+            self.assertEqual(settings.assets_base_dir, temp_path.resolve() / "custom-assets")
             self.assertEqual(settings.output_format, "txt")
 
     def test_mineru_options_are_loaded_from_env(self):

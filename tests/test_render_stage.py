@@ -82,6 +82,25 @@ class RenderStageTest(unittest.TestCase):
             output = document.final_output_path.read_text(encoding="utf-8")
             self.assertIn("![x](https://cdn.example/assets/run-1/0001_doc/a.png)", output)
 
+    def test_render_copies_images_to_custom_assets_dir(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            settings = replace(make_settings(temp_path), assets_base_dir=temp_path / "public-assets")
+            context = RunContext.create(settings.runs_dir, "run-1", settings.assets_base_dir)
+            context.ensure_directories()
+            kimi_md = context.kimi_dir / "0001_doc.md"
+            kimi_md.write_text("# 不良项目：A\n\n![x](images/a.png)", encoding="utf-8")
+            images_dir = context.mineru_dir / "0001_doc" / "images"
+            images_dir.mkdir(parents=True)
+            (images_dir / "a.png").write_bytes(b"image")
+            document = make_document(temp_path, context, kimi_md)
+
+            RenderStage(settings).run(context, [document])
+
+            self.assertTrue((temp_path / "public-assets" / "run-1" / "0001_doc" / "a.png").exists())
+            output = document.final_output_path.read_text(encoding="utf-8")
+            self.assertIn("![x](../../../public-assets/run-1/0001_doc/a.png)", output)
+
 
 def make_document(temp_path, context, kimi_md):
     return DocumentRecord(

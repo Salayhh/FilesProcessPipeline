@@ -22,8 +22,9 @@ class KimiStage:
         result = StageResult(stage="kimi")
         context.kimi_dir.mkdir(parents=True, exist_ok=True)
 
-        candidates = [document for document in documents if document.mineru_markdown_path]
-        print(f"[Kimi] 开始整理: {len(candidates)}/{len(documents)} 个 MinerU Markdown", flush=True)
+        candidates = [document for document in documents if self._input_markdown_path(document)]
+        input_label = "脱敏 Markdown" if self.settings.sanitize_enabled else "Markdown"
+        print(f"[Kimi] 开始整理: {len(candidates)}/{len(documents)} 个 {input_label}", flush=True)
         print(
             "[Kimi] 配置: "
             f"model={self.settings.kimi_model}, "
@@ -32,9 +33,9 @@ class KimiStage:
             flush=True,
         )
         if not candidates:
-            result.errors["input"] = "没有 MinerU Markdown 可供 Kimi 处理"
+            result.errors["input"] = f"没有 {input_label} 可供 Kimi 处理"
             result.failed = len(documents)
-            print("[Kimi] 没有 MinerU Markdown 可供处理", flush=True)
+            print(f"[Kimi] 没有 {input_label} 可供处理", flush=True)
             return result
 
         max_workers = min(self.settings.kimi_concurrency, len(candidates))
@@ -78,9 +79,10 @@ class KimiStage:
     ) -> tuple[Path, TokenUsage]:
         start = time.monotonic()
         print(f"[Kimi] 文件 {index}/{total}: {document.original_name}", flush=True)
-        if not document.mineru_markdown_path:
-            raise ValueError("缺少 MinerU Markdown 路径")
-        source_content = read_text_with_fallback(document.mineru_markdown_path)
+        input_path = self._input_markdown_path(document)
+        if not input_path:
+            raise ValueError("缺少可供 Kimi 处理的 Markdown 路径")
+        source_content = read_text_with_fallback(input_path)
         if not source_content.strip():
             raise ValueError("文件内容为空")
 
@@ -109,6 +111,13 @@ class KimiStage:
                     time.sleep(self.settings.kimi_retry_delay)
 
         raise RuntimeError(f"Kimi API 调用失败: {last_error}")
+
+    def _input_markdown_path(self, document: DocumentRecord) -> Path | None:
+        if document.sanitized_markdown_path:
+            return document.sanitized_markdown_path
+        if self.settings.sanitize_enabled:
+            return None
+        return document.mineru_markdown_path
 
 
 def read_text_with_fallback(file_path: Path) -> str:

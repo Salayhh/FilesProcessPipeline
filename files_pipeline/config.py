@@ -99,6 +99,8 @@ class Settings:
     image_base_url: str = ""
     output_format: str = "md"
     section_separator: str = "+=+=+="
+    sanitize_enabled: bool = False
+    sanitize_entities_path: Path | None = None
     supported_extensions: tuple[str, ...] = field(default_factory=lambda: SUPPORTED_EXTENSIONS)
     kimi_template_path: Path | None = None
 
@@ -150,6 +152,8 @@ class Settings:
             image_base_url=os.getenv("IMAGE_BASE_URL", "").strip(),
             output_format=output_format,
             kimi_template_path=template_path,
+            sanitize_enabled=_get_bool_env("SANITIZE_ENABLED", False),
+            sanitize_entities_path=_get_optional_path_env("SANITIZE_ENTITIES_PATH", root),
         )
 
     def missing_required_keys(self) -> list[str]:

@@ -51,4 +51,4 @@ process_test/
 .DS_Store
 .codex/
 docs/
-stages
+/stages/

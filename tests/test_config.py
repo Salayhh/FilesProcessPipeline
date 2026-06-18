@@ -19,6 +19,8 @@ class SettingsTest(unittest.TestCase):
                         "KIMI_MODEL=from-file",
                         "ASSETS_DIR=custom-assets",
                         "OUTPUT_FORMAT=txt",
+                        "SANITIZE_ENABLED=true",
+                        "SANITIZE_ENTITIES_PATH=data/private/entities.json",
                     ]
                 ),
                 encoding="utf-8",
@@ -40,6 +42,8 @@ class SettingsTest(unittest.TestCase):
             self.assertEqual(settings.kimi_model, "from-file")
             self.assertEqual(settings.assets_base_dir, temp_path.resolve() / "custom-assets")
             self.assertEqual(settings.output_format, "txt")
+            self.assertTrue(settings.sanitize_enabled)
+            self.assertEqual(settings.sanitize_entities_path, temp_path.resolve() / "data/private/entities.json")
 
     def test_mineru_options_are_loaded_from_env(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -56,6 +56,7 @@ class DocumentRecord:
     original_stem: str
     extension: str
     mineru_markdown_path: Path | None = None
+    sanitized_markdown_path: Path | None = None
     kimi_markdown_path: Path | None = None
     final_output_path: Path | None = None
     status: str = "pending"
@@ -74,6 +75,7 @@ class DocumentRecord:
             "original_stem": self.original_stem,
             "extension": self.extension,
             "mineru_markdown_path": _path_to_text(self.mineru_markdown_path, run_dir),
+            "sanitized_markdown_path": _path_to_text(self.sanitized_markdown_path, run_dir),
             "kimi_markdown_path": _path_to_text(self.kimi_markdown_path, run_dir),
             "final_output_path": _path_to_text(self.final_output_path, run_dir),
             "status": self.status,
@@ -96,6 +98,7 @@ class DocumentRecord:
             original_stem=data["original_stem"],
             extension=data["extension"],
             mineru_markdown_path=resolve(data.get("mineru_markdown_path")),
+            sanitized_markdown_path=resolve(data.get("sanitized_markdown_path")),
             kimi_markdown_path=resolve(data.get("kimi_markdown_path")),
             final_output_path=resolve(data.get("final_output_path")),
             status=data.get("status", "pending"),
@@ -133,6 +136,7 @@ class RunContext:
     run_dir: Path
     source_dir: Path
     mineru_dir: Path
+    sanitized_dir: Path
     kimi_dir: Path
     assets_dir: Path
     final_dir: Path
@@ -147,6 +151,7 @@ class RunContext:
             run_dir=run_dir,
             source_dir=run_dir / "source",
             mineru_dir=run_dir / "mineru",
+            sanitized_dir=run_dir / "sanitized",
             kimi_dir=run_dir / "kimi",
             assets_dir=assets_dir,
             final_dir=run_dir / "final",
@@ -158,6 +163,7 @@ class RunContext:
             self.run_dir,
             self.source_dir,
             self.mineru_dir,
+            self.sanitized_dir,
             self.kimi_dir,
             self.assets_dir,
             self.final_dir,

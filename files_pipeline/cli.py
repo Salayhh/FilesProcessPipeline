@@ -15,6 +15,7 @@ from files_pipeline.pipeline import (
     run_pipeline,
     run_render,
     run_retry_failed,
+    run_sanitize,
 )
 
 
@@ -32,6 +33,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     organize_parser = subparsers.add_parser("organize", help="只执行 Kimi 整理")
     organize_parser.add_argument("--run-id", required=True, help="已有运行 ID")
+
+    sanitize_parser = subparsers.add_parser("sanitize", help="只执行 MinerU Markdown 脱敏")
+    sanitize_parser.add_argument("--run-id", required=True, help="已有运行 ID")
 
     render_parser = subparsers.add_parser("render", help="只执行最终渲染")
     render_parser.add_argument("--run-id", required=True, help="已有运行 ID")
@@ -62,6 +66,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "organize":
             manifest = run_organize(args.run_id)
             print_success(manifest.run_id, "Kimi 整理完成")
+        elif args.command == "sanitize":
+            manifest = run_sanitize(args.run_id)
+            print_success(manifest.run_id, "Markdown 脱敏完成")
         elif args.command == "render":
             manifest = run_render(args.run_id)
             print_success(manifest.run_id, "最终渲染完成")

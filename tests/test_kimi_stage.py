@@ -109,6 +109,45 @@ class KimiStageTest(unittest.TestCase):
             self.assertEqual(len(client.calls), 2)
             self.assertEqual(result.token_usage.total_tokens, 3)
 
+    def test_run_uses_sanitized_markdown_when_available(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            settings = make_settings(temp_path, sanitize_enabled=True)
+            context = RunContext.create(settings.runs_dir, "run-1")
+            context.ensure_directories()
+            mineru_md = context.mineru_dir / "0001_doc" / "0001_doc.md"
+            mineru_md.parent.mkdir(parents=True)
+            mineru_md.write_text("原始公司名", encoding="utf-8")
+            sanitized_md = context.sanitized_dir / "0001_doc.md"
+            sanitized_md.parent.mkdir(parents=True, exist_ok=True)
+            sanitized_md.write_text("公司_001", encoding="utf-8")
+            document = make_document(temp_path, context, mineru_md)
+            document.sanitized_markdown_path = sanitized_md
+            client = FakeKimiClient([KimiCompletion("ok", TokenUsage(1, 2, 3))])
+
+            result = KimiStage(settings, client=client).run(context, [document])
+
+            self.assertEqual(result.success, 1)
+            self.assertEqual(client.calls, [("公司_001", "doc.pdf")])
+
+    def test_run_requires_sanitized_markdown_when_sanitize_enabled(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            settings = make_settings(temp_path, sanitize_enabled=True)
+            context = RunContext.create(settings.runs_dir, "run-1")
+            context.ensure_directories()
+            mineru_md = context.mineru_dir / "0001_doc" / "0001_doc.md"
+            mineru_md.parent.mkdir(parents=True)
+            mineru_md.write_text("原始公司名", encoding="utf-8")
+            document = make_document(temp_path, context, mineru_md)
+            client = FakeKimiClient([])
+
+            result = KimiStage(settings, client=client).run(context, [document])
+
+            self.assertEqual(result.success, 0)
+            self.assertEqual(result.failed, 1)
+            self.assertEqual(client.calls, [])
+
     def test_empty_markdown_is_failed(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)

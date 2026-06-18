@@ -31,6 +31,8 @@ def make_settings(base_dir: Path, **overrides) -> Settings:
         "image_base_url": "",
         "output_format": "md",
         "section_separator": "+=+=+=",
+        "sanitize_enabled": False,
+        "sanitize_entities_path": None,
         "kimi_template_path": prompt_path,
     }
     values.update(overrides)

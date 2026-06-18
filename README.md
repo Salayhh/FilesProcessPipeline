@@ -59,10 +59,12 @@ KIMI_RETRY_DELAY=5
 KIMI_CONCURRENCY=4
 ASSETS_DIR=/your/custom/assets/root
 IMAGE_BASE_URL=http://your-server/pic
+SANITIZE_ENABLED=false
+SANITIZE_ENTITIES_PATH=data/private/sensitive_entities.json
 OUTPUT_FORMAT=md
 ```
 
-`.env` 会覆盖系统环境变量。`OUTPUT_FORMAT` 只允许 `md` 或 `txt`。`KIMI_CONCURRENCY` 控制 Kimi 阶段并发处理文件数，必须是大于等于 1 的整数。`ASSETS_DIR` 留空时图片写入 `runs/{run_id}/assets/`，填写后图片写入 `ASSETS_DIR/{run_id}/`。
+`.env` 会覆盖系统环境变量。`OUTPUT_FORMAT` 只允许 `md` 或 `txt`。`KIMI_CONCURRENCY` 控制 Kimi 阶段并发处理文件数，必须是大于等于 1 的整数。`ASSETS_DIR` 留空时图片写入 `runs/{run_id}/assets/`，填写后图片写入 `ASSETS_DIR/{run_id}/`。`SANITIZE_ENABLED=true` 时会在 MinerU 和 Kimi 之间执行 Markdown 脱敏。
 
 ### 3. 准备输入文件
 
@@ -93,10 +95,11 @@ python3 pipeline.py
 
 1. 从 `input/` 读取文件并复制快照到 `runs/{run_id}/source/`
 2. 调用 MinerU，写入 `runs/{run_id}/mineru/{source_id}/`
-3. 调用 Kimi，写入 `runs/{run_id}/kimi/{source_id}.md`
-4. 复制图片到 `runs/{run_id}/assets/{source_id}/`
-5. 写入最终结果到 `runs/{run_id}/final/{source_id}.{md|txt}`
-6. 写入运行记录 `runs/{run_id}/manifest.json`
+3. 如果启用脱敏，写入 `runs/{run_id}/sanitized/{source_id}.md`
+4. 调用 Kimi，写入 `runs/{run_id}/kimi/{source_id}.md`
+5. 复制图片到 `runs/{run_id}/assets/{source_id}/`
+6. 写入最终结果到 `runs/{run_id}/final/{source_id}.{md|txt}`
+7. 写入运行记录 `runs/{run_id}/manifest.json`
 
 完整运行会调用外部 API，但不会移动或清空 `input/`。
 
@@ -112,6 +115,7 @@ python3 -m files_pipeline.cli run --input input
 
 ```bash
 python3 -m files_pipeline.cli parse --input input --run-id demo
+python3 -m files_pipeline.cli sanitize --run-id demo
 python3 -m files_pipeline.cli organize --run-id demo
 python3 -m files_pipeline.cli render --run-id demo
 ```
@@ -133,6 +137,32 @@ python3 -m files_pipeline.cli retry-failed --run-id demo
 
 `retry-failed` 会读取原 run 的 `manifest.json` 和 `source/` 快照，只补跑未完成文件缺失的阶段，并把结果写回同一个 `runs/{run_id}/`。
 
+## MinerU Markdown 脱敏
+
+如需避免把供应商、公司名称发送给 Kimi，可以启用脱敏阶段：
+
+```env
+SANITIZE_ENABLED=true
+SANITIZE_ENTITIES_PATH=data/private/sensitive_entities.json
+```
+
+词表使用 JSON 映射，建议放在 `data/private/` 下，避免提交到 Git：
+
+```json
+{
+  "深圳某某科技有限公司": "公司_001",
+  "上海测试设备有限公司": "供应商_001"
+}
+```
+
+脱敏阶段会读取 MinerU Markdown，输出到：
+
+```text
+runs/{run_id}/sanitized/{source_id}.md
+```
+
+启用后，Kimi 只读取脱敏后的 Markdown；如果某个文档没有脱敏产物，Kimi 不会回退读取 MinerU 原文。脱敏会跳过 Markdown 代码块、行内代码和链接目标，避免破坏图片路径；图片本身、印章、截图中的文字不会被处理。
+
 ## 目录结构
 
 ```text
@@ -142,6 +172,7 @@ python3 -m files_pipeline.cli retry-failed --run-id demo
 │   └── {run_id}/
 │       ├── source/                # 本次输入快照
 │       ├── mineru/{source_id}/    # MinerU 解压结果
+│       ├── sanitized/{source_id}.md # 脱敏后的 Markdown
 │       ├── kimi/{source_id}.md    # Kimi 整理结果
 │       ├── assets/{source_id}/    # 复制后的图片
 │       ├── final/{source_id}.md   # 最终输出
@@ -222,9 +253,10 @@ python3 -m unittest discover -s tests
 
 当前覆盖：
 
-- 配置加载、`.env` override、非法配置
+- 配置加载、`.env` override、非法配置、脱敏配置
 - MinerU zip 安全解压、Markdown 规范化、大小写扩展名、mock 解析流程
-- Kimi 空文件、重试、失败记录、token 统计
+- Kimi 空文件、重试、失败记录、token 统计、脱敏输入优先级
+- Sanitize 词表加载、Markdown 替换、代码块和链接目标保护
 - Render 标题处理、图片复制、相对/绝对链接
 - Pipeline 编排、失败 manifest、部分成功状态、失败补跑、默认不归档
 - 简易入口和高级 CLI 参数分发

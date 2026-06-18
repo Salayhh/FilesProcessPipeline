@@ -16,7 +16,17 @@ class CliTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         run_pipeline.assert_called_once()
+        self.assertEqual(run_pipeline.call_args.kwargs["input_dir"].as_posix(), "input")
         self.assertEqual(run_pipeline.call_args.kwargs["run_id"], "run-1")
+
+    def test_cli_run_without_input_uses_settings_default(self):
+        with patch("files_pipeline.cli.run_pipeline", return_value=SimpleNamespace(run_id="run-1")) as run_pipeline:
+            with redirect_stdout(StringIO()):
+                exit_code = cli.main(["run", "--run-id", "run-1"])
+
+        self.assertEqual(exit_code, 0)
+        run_pipeline.assert_called_once()
+        self.assertIsNone(run_pipeline.call_args.kwargs["input_dir"])
 
     def test_cli_archive_command_calls_archive(self):
         with patch("files_pipeline.cli.archive_run", return_value="/tmp/data/run-1") as archive_run:

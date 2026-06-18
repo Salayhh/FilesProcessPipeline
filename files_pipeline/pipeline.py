@@ -93,7 +93,7 @@ def run_parse(input_dir: Path | str | None = None, run_id: str | None = None, se
     manifest = RunManifest.create(context.run_id, documents)
     result = MinerUStage(settings).run(context, documents)
     _record_or_abort(manifest, context, result, "MinerU 阶段没有成功文件")
-    manifest.status = "parsed"
+    manifest.status = stage_completion_status(documents, result, "parsed")
     manifest.save(context.manifest_path)
     print(f"[Pipeline] MinerU parse 完成: runs/{context.run_id}, 用时 {format_duration(time.monotonic() - start)}", flush=True)
     return manifest
@@ -107,7 +107,7 @@ def run_sanitize(run_id: str, settings: Settings | None = None) -> RunManifest:
     manifest = RunManifest.load(context.manifest_path)
     result = SanitizeStage(settings).run(context, manifest.documents)
     _record_or_abort(manifest, context, result, "Sanitize 阶段没有成功文件")
-    manifest.status = "sanitized"
+    manifest.status = stage_completion_status(manifest.documents, result, "sanitized")
     manifest.save(context.manifest_path)
     print(f"[Pipeline] sanitize 完成: runs/{context.run_id}, 用时 {format_duration(time.monotonic() - start)}", flush=True)
     return manifest
@@ -126,7 +126,7 @@ def run_organize(run_id: str, settings: Settings | None = None) -> RunManifest:
         _record_or_abort(manifest, context, sanitize_result, "Sanitize 阶段没有成功文件")
     result = KimiStage(settings).run(context, manifest.documents)
     _record_or_abort(manifest, context, result, "Kimi 阶段没有成功文件")
-    manifest.status = "organized"
+    manifest.status = stage_completion_status(manifest.documents, result, "organized")
     manifest.save(context.manifest_path)
     print(f"[Pipeline] Kimi organize 完成: runs/{context.run_id}, 用时 {format_duration(time.monotonic() - start)}", flush=True)
     return manifest
@@ -140,7 +140,7 @@ def run_render(run_id: str, settings: Settings | None = None) -> RunManifest:
     manifest = RunManifest.load(context.manifest_path)
     result = RenderStage(settings).run(context, manifest.documents)
     _record_or_abort(manifest, context, result, "Render 阶段没有成功文件")
-    manifest.status = "rendered"
+    manifest.status = stage_completion_status(manifest.documents, result, "rendered")
     manifest.save(context.manifest_path)
     print(f"[Pipeline] render 完成: runs/{context.run_id}, 用时 {format_duration(time.monotonic() - start)}", flush=True)
     return manifest
@@ -310,6 +310,12 @@ def completion_status(documents: list[DocumentRecord]) -> str:
     if any(document_is_complete(document) for document in documents):
         return "partial_success"
     return "failed"
+
+
+def stage_completion_status(documents: list[DocumentRecord], result: StageResult, completed_status: str) -> str:
+    if documents and result.success == len(documents) and result.failed == 0:
+        return completed_status
+    return f"partial_{completed_status}"
 
 
 def reset_document_for_retry(document: DocumentRecord) -> None:

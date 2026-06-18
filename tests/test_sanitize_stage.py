@@ -54,6 +54,29 @@ class SanitizeStageTest(unittest.TestCase):
             self.assertEqual(document.sanitized_markdown_path, context.sanitized_dir / "0001_doc.md")
             self.assertEqual(document.sanitized_markdown_path.read_text(encoding="utf-8"), "公司_001")
 
+    def test_run_marks_document_failed_when_replacements_config_is_invalid(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            settings = make_settings(
+                temp_path,
+                sanitize_enabled=True,
+                sanitize_entities_path=temp_path / "missing.json",
+            )
+            context = RunContext.create(settings.runs_dir, "run-1")
+            context.ensure_directories()
+            mineru_md = context.mineru_dir / "0001_doc" / "0001_doc.md"
+            mineru_md.parent.mkdir(parents=True)
+            mineru_md.write_text("深圳某某科技有限公司", encoding="utf-8")
+            document = make_document(temp_path, context, mineru_md)
+
+            result = SanitizeStage(settings).run(context, [document])
+
+            self.assertEqual(result.success, 0)
+            self.assertEqual(result.failed, 1)
+            self.assertEqual(document.status, "failed")
+            self.assertIn("脱敏词表不存在", document.errors[-1])
+            self.assertIn("脱敏词表不存在", result.errors["0001_doc"])
+
     def test_load_replacements_accepts_entities_object(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "entities.json"

@@ -24,11 +24,11 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser("run", help="执行完整流程")
-    run_parser.add_argument("--input", default="input", help="输入目录，默认 input")
+    run_parser.add_argument("--input", default=None, help="输入目录，默认使用项目 input")
     run_parser.add_argument("--run-id", default=None, help="指定运行 ID")
 
     parse_parser = subparsers.add_parser("parse", help="只执行 MinerU 解析")
-    parse_parser.add_argument("--input", default="input", help="输入目录，默认 input")
+    parse_parser.add_argument("--input", default=None, help="输入目录，默认使用项目 input")
     parse_parser.add_argument("--run-id", default=None, help="指定运行 ID")
 
     organize_parser = subparsers.add_parser("organize", help="只执行 Kimi 整理")
@@ -58,10 +58,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.command == "run":
-            manifest = run_pipeline(input_dir=Path(args.input), run_id=args.run_id)
+            manifest = run_pipeline(input_dir=Path(args.input) if args.input else None, run_id=args.run_id)
             print_success(manifest.run_id, "完整流程完成")
         elif args.command == "parse":
-            manifest = run_parse(input_dir=Path(args.input), run_id=args.run_id)
+            manifest = run_parse(input_dir=Path(args.input) if args.input else None, run_id=args.run_id)
             print_success(manifest.run_id, "MinerU 解析完成")
         elif args.command == "organize":
             manifest = run_organize(args.run_id)

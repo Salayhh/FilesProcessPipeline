@@ -42,8 +42,11 @@ class SanitizeStage:
         except Exception as exc:
             message = str(exc)
             result.failed = len(candidates)
-            result.failed_documents = [document.source_id for document in candidates]
             result.errors["config"] = message
+            for document in candidates:
+                document.add_error(message)
+                result.failed_documents.append(document.source_id)
+                result.errors[document.source_id] = message
             print(f"[Sanitize] 配置错误: {message}", flush=True)
             return result
 

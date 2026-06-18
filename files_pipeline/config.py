@@ -38,6 +38,20 @@ def _get_int_env(name: str, default: int) -> int:
         raise ValueError(f"{name} 必须是整数，当前值: {value}") from exc
 
 
+def _get_positive_int_env(name: str, default: int) -> int:
+    value = _get_int_env(name, default)
+    if value < 1:
+        raise ValueError(f"{name} 必须是大于等于 1 的整数，当前值: {value}")
+    return value
+
+
+def _get_nonnegative_int_env(name: str, default: int) -> int:
+    value = _get_int_env(name, default)
+    if value < 0:
+        raise ValueError(f"{name} 必须是大于等于 0 的整数，当前值: {value}")
+    return value
+
+
 def _get_bool_env(name: str, default: bool) -> bool:
     value = os.getenv(name)
     if value is None or value == "":
@@ -69,6 +83,9 @@ class Settings:
     mineru_poll_interval: int = 10
     mineru_max_poll_time: int = 3600
     mineru_max_query_errors: int = 10
+    mineru_upload_timeout: int = 60
+    mineru_upload_max_retries: int = 2
+    mineru_upload_retry_delay: int = 10
 
     kimi_api_key: str | None = None
     kimi_model: str = "kimi-k2.5"
@@ -76,6 +93,7 @@ class Settings:
     kimi_timeout: int = 600
     kimi_max_retries: int = 2
     kimi_retry_delay: int = 10
+    kimi_concurrency: int = 4
 
     image_base_url: str = ""
     output_format: str = "md"
@@ -117,12 +135,16 @@ class Settings:
             mineru_language=os.getenv("MINERU_LANGUAGE", "ch"),
             mineru_max_poll_time=_get_int_env("MINERU_MAX_POLL_TIME", 3600),
             mineru_max_query_errors=_get_int_env("MINERU_MAX_QUERY_ERRORS", 10),
+            mineru_upload_timeout=_get_positive_int_env("MINERU_UPLOAD_TIMEOUT", 60),
+            mineru_upload_max_retries=_get_nonnegative_int_env("MINERU_UPLOAD_MAX_RETRIES", 2),
+            mineru_upload_retry_delay=_get_nonnegative_int_env("MINERU_UPLOAD_RETRY_DELAY", 10),
             kimi_api_key=os.getenv("KIMI_API_KEY") or None,
             kimi_model=os.getenv("KIMI_MODEL", "kimi-k2.5"),
             kimi_base_url=os.getenv("KIMI_BASE_URL", "https://api.moonshot.cn/v1"),
             kimi_timeout=_get_int_env("KIMI_TIMEOUT", 600),
             kimi_max_retries=_get_int_env("KIMI_MAX_RETRIES", 2),
             kimi_retry_delay=_get_int_env("KIMI_RETRY_DELAY", 10),
+            kimi_concurrency=_get_positive_int_env("KIMI_CONCURRENCY", 4),
             image_base_url=os.getenv("IMAGE_BASE_URL", "").strip(),
             output_format=output_format,
             kimi_template_path=template_path,

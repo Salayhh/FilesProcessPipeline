@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import shutil
 import time
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -57,7 +58,7 @@ def run_pipeline(
         render_result = (render_stage or RenderStage(settings)).run(context, documents)
         _record_or_abort(manifest, context, render_result, "Render 阶段没有成功文件")
 
-        manifest.status = "success"
+        manifest.status = completion_status(documents)
         manifest.save(context.manifest_path)
         print(f"[Pipeline] 完整流程完成: runs/{context.run_id}, 用时 {format_duration(time.monotonic() - start)}", flush=True)
         return manifest
@@ -122,6 +123,78 @@ def run_render(run_id: str, settings: Settings | None = None) -> RunManifest:
     return manifest
 
 
+def list_failed_documents(run_id: str, settings: Settings | None = None) -> list[DocumentRecord]:
+    settings = settings or Settings.from_env()
+    context = create_run_context(settings, run_id)
+    manifest = RunManifest.load(context.manifest_path)
+    return retryable_documents(manifest.documents)
+
+
+def run_retry_failed(
+    run_id: str,
+    settings: Settings | None = None,
+    mineru_stage: MinerUStage | None = None,
+    kimi_stage: KimiStage | None = None,
+    render_stage: RenderStage | None = None,
+) -> RunManifest:
+    start = time.monotonic()
+    settings = settings or Settings.from_env()
+    context = create_run_context(settings, run_id)
+    manifest = RunManifest.load(context.manifest_path)
+    documents = retryable_documents(manifest.documents)
+    if not documents:
+        manifest.status = completion_status(manifest.documents)
+        manifest.save(context.manifest_path)
+        print(f"[Pipeline] 没有需要补跑的文件: runs/{run_id}", flush=True)
+        return manifest
+
+    needs_mineru = any(not path_exists(document.mineru_markdown_path) for document in documents)
+    needs_kimi = any(not path_exists(document.kimi_markdown_path) for document in documents)
+    if needs_mineru and not settings.mineru_api_token:
+        raise PipelineError("缺少必要配置: MINERU_API_TOKEN")
+    if needs_kimi and not settings.kimi_api_key:
+        raise PipelineError("缺少必要配置: KIMI_API_KEY")
+
+    print(f"[Pipeline] 开始补跑失败文件: run_id={run_id}, files={len(documents)}", flush=True)
+    for document in documents:
+        reset_document_for_retry(document)
+        print(f"[Pipeline] 补跑候选: {document.original_name}, status={document.status}", flush=True)
+    manifest.save(context.manifest_path)
+
+    mineru_documents = [document for document in documents if not path_exists(document.mineru_markdown_path)]
+    if mineru_documents:
+        result = (mineru_stage or MinerUStage(settings)).run(context, mineru_documents)
+        _record_retry_stage(manifest, context, result)
+
+    kimi_documents = [
+        document
+        for document in documents
+        if path_exists(document.mineru_markdown_path) and not path_exists(document.kimi_markdown_path)
+    ]
+    if kimi_documents:
+        result = (kimi_stage or KimiStage(settings)).run(context, kimi_documents)
+        _record_retry_stage(manifest, context, result)
+
+    render_documents = [
+        document
+        for document in documents
+        if path_exists(document.kimi_markdown_path) and not path_exists(document.final_output_path)
+    ]
+    if render_documents:
+        result = (render_stage or RenderStage(settings)).run(context, render_documents)
+        _record_retry_stage(manifest, context, result)
+
+    manifest.status = completion_status(manifest.documents)
+    manifest.save(context.manifest_path)
+    remaining = retryable_documents(manifest.documents)
+    print(
+        f"[Pipeline] 补跑完成: remaining={len(remaining)}, status={manifest.status}, "
+        f"用时 {format_duration(time.monotonic() - start)}",
+        flush=True,
+    )
+    return manifest
+
+
 def archive_run(run_id: str, settings: Settings | None = None) -> Path:
     settings = settings or Settings.from_env()
     source = settings.runs_dir / run_id
@@ -175,12 +248,58 @@ def safe_filename(value: str) -> str:
     return cleaned or "document"
 
 
+def path_exists(path: Path | None) -> bool:
+    return path is not None and path.exists()
+
+
+def document_is_complete(document: DocumentRecord) -> bool:
+    return document.status == "done" and path_exists(document.final_output_path)
+
+
+def retryable_documents(documents: list[DocumentRecord]) -> list[DocumentRecord]:
+    return [document for document in documents if not document_is_complete(document)]
+
+
+def completion_status(documents: list[DocumentRecord]) -> str:
+    if documents and all(document_is_complete(document) for document in documents):
+        return "success"
+    if any(document_is_complete(document) for document in documents):
+        return "partial_success"
+    return "failed"
+
+
+def reset_document_for_retry(document: DocumentRecord) -> None:
+    document.errors.clear()
+    if path_exists(document.final_output_path):
+        document.status = "done"
+        return
+    document.final_output_path = None
+
+    if path_exists(document.kimi_markdown_path):
+        document.status = "kimi_done"
+        return
+    document.kimi_markdown_path = None
+
+    if path_exists(document.mineru_markdown_path):
+        document.status = "mineru_done"
+        return
+    document.mineru_markdown_path = None
+    document.status = "pending"
+
+
 def _record_or_abort(manifest: RunManifest, context: RunContext, result: StageResult, message: str) -> None:
     manifest.record_stage(result, context.run_dir)
     manifest.save(context.manifest_path)
     _print_stage_summary(result)
     if result.success == 0:
         raise PipelineError(message)
+
+
+def _record_retry_stage(manifest: RunManifest, context: RunContext, result: StageResult) -> None:
+    retry_result = replace(result, stage=f"retry_{result.stage}")
+    manifest.record_stage(retry_result, context.run_dir)
+    manifest.save(context.manifest_path)
+    _print_stage_summary(retry_result)
 
 
 def _print_stage_summary(result: StageResult) -> None:

@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from files_pipeline.models import StageResult
-from files_pipeline.pipeline import PipelineError, archive_run, run_pipeline
+from files_pipeline.pipeline import PipelineError, archive_run, list_failed_documents, run_pipeline, run_retry_failed
 
 from tests.utils import make_settings
 
@@ -89,6 +89,100 @@ class PipelineTest(unittest.TestCase):
             content = manifest_path.read_text(encoding="utf-8")
             self.assertIn('"status": "failed"', content)
             self.assertIn("MinerU 阶段没有成功文件", content)
+
+    def test_run_pipeline_marks_partial_success_and_retry_failed_completes_remaining_document(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            settings = make_settings(temp_path)
+            input_dir = settings.input_dir
+            input_dir.mkdir()
+            (input_dir / "a.pdf").write_bytes(b"a")
+            (input_dir / "b.pdf").write_bytes(b"b")
+            calls = []
+
+            def initial_mineru(context, documents):
+                output = context.mineru_dir / documents[0].source_id / f"{documents[0].source_id}.md"
+                output.parent.mkdir(parents=True)
+                output.write_text("mineru", encoding="utf-8")
+                documents[0].mineru_markdown_path = output
+                documents[0].status = "mineru_done"
+                documents[1].add_error("upload timeout")
+                return StageResult(
+                    stage="mineru",
+                    success=1,
+                    failed=1,
+                    output_files=[output],
+                    failed_documents=[documents[1].source_id],
+                    errors={documents[1].source_id: "upload timeout"},
+                )
+
+            def initial_kimi(context, documents):
+                document = documents[0]
+                output = context.kimi_dir / f"{document.source_id}.md"
+                output.write_text("kimi", encoding="utf-8")
+                document.kimi_markdown_path = output
+                document.status = "kimi_done"
+                return StageResult(stage="kimi", success=1, output_files=[output])
+
+            def initial_render(context, documents):
+                document = documents[0]
+                output = context.final_dir / f"{document.source_id}.md"
+                output.write_text("final", encoding="utf-8")
+                document.final_output_path = output
+                document.status = "done"
+                return StageResult(stage="render", success=1, output_files=[output])
+
+            manifest = run_pipeline(
+                input_dir=input_dir,
+                run_id="run-1",
+                settings=settings,
+                mineru_stage=FakeStage("mineru", calls, initial_mineru),
+                kimi_stage=FakeStage("kimi", calls, initial_kimi),
+                render_stage=FakeStage("render", calls, initial_render),
+            )
+
+            self.assertEqual(manifest.status, "partial_success")
+            failed_documents = list_failed_documents("run-1", settings=settings)
+            self.assertEqual([document.original_name for document in failed_documents], ["b.pdf"])
+
+            def retry_mineru(context, documents):
+                document = documents[0]
+                output = context.mineru_dir / document.source_id / f"{document.source_id}.md"
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text("mineru retry", encoding="utf-8")
+                document.mineru_markdown_path = output
+                document.status = "mineru_done"
+                return StageResult(stage="mineru", success=1, output_files=[output])
+
+            def retry_kimi(context, documents):
+                document = documents[0]
+                output = context.kimi_dir / f"{document.source_id}.md"
+                output.write_text("kimi retry", encoding="utf-8")
+                document.kimi_markdown_path = output
+                document.status = "kimi_done"
+                return StageResult(stage="kimi", success=1, output_files=[output])
+
+            def retry_render(context, documents):
+                document = documents[0]
+                output = context.final_dir / f"{document.source_id}.md"
+                output.write_text("final retry", encoding="utf-8")
+                document.final_output_path = output
+                document.status = "done"
+                return StageResult(stage="render", success=1, output_files=[output])
+
+            retried = run_retry_failed(
+                "run-1",
+                settings=settings,
+                mineru_stage=FakeStage("retry_mineru", calls, retry_mineru),
+                kimi_stage=FakeStage("retry_kimi", calls, retry_kimi),
+                render_stage=FakeStage("retry_render", calls, retry_render),
+            )
+
+            self.assertEqual(retried.status, "success")
+            self.assertEqual(list_failed_documents("run-1", settings=settings), [])
+            self.assertIn("retry_mineru", retried.stages)
+            self.assertIn("retry_kimi", retried.stages)
+            self.assertIn("retry_render", retried.stages)
 
     def test_archive_run_moves_only_requested_run_directory(self):
         with tempfile.TemporaryDirectory() as temp_dir:

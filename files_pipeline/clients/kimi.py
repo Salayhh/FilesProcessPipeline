@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from threading import Lock
+
 from openai import OpenAI
 
 from files_pipeline.config import Settings
@@ -12,6 +14,7 @@ class KimiClient:
     def __init__(self, settings: Settings):
         self.settings = settings
         self._client: OpenAI | None = None
+        self._client_lock = Lock()
         self.template = self._load_template()
 
     def _load_template(self) -> str:
@@ -22,12 +25,14 @@ class KimiClient:
     @property
     def client(self) -> OpenAI:
         if self._client is None:
-            self._client = OpenAI(
-                api_key=self.settings.kimi_api_key,
-                base_url=self.settings.kimi_base_url,
-                timeout=self.settings.kimi_timeout,
-                max_retries=0,
-            )
+            with self._client_lock:
+                if self._client is None:
+                    self._client = OpenAI(
+                        api_key=self.settings.kimi_api_key,
+                        base_url=self.settings.kimi_base_url,
+                        timeout=self.settings.kimi_timeout,
+                        max_retries=0,
+                    )
         return self._client
 
     def complete(self, source_content: str, file_name: str) -> KimiCompletion:

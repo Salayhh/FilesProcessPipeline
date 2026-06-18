@@ -6,7 +6,16 @@ import argparse
 import sys
 from pathlib import Path
 
-from files_pipeline.pipeline import PipelineError, archive_run, run_organize, run_parse, run_pipeline, run_render
+from files_pipeline.pipeline import (
+    PipelineError,
+    archive_run,
+    list_failed_documents,
+    run_organize,
+    run_parse,
+    run_pipeline,
+    run_render,
+    run_retry_failed,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,6 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     archive_parser = subparsers.add_parser("archive", help="显式归档一个运行目录")
     archive_parser.add_argument("--run-id", required=True, help="要归档的运行 ID")
+
+    failed_parser = subparsers.add_parser("failed", help="列出未完成或失败文件")
+    failed_parser.add_argument("--run-id", required=True, help="已有运行 ID")
+
+    retry_parser = subparsers.add_parser("retry-failed", help="补跑未完成或失败文件")
+    retry_parser.add_argument("--run-id", required=True, help="已有运行 ID")
 
     return parser
 
@@ -53,6 +68,12 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "archive":
             target = archive_run(args.run_id)
             print(f"归档完成: {target}")
+        elif args.command == "failed":
+            documents = list_failed_documents(args.run_id)
+            print_failed_documents(args.run_id, documents)
+        elif args.command == "retry-failed":
+            manifest = run_retry_failed(args.run_id)
+            print_success(manifest.run_id, f"补跑完成，status={manifest.status}")
         return 0
     except PipelineError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
@@ -61,6 +82,16 @@ def main(argv: list[str] | None = None) -> int:
 
 def print_success(run_id: str, message: str) -> None:
     print(f"{message}: runs/{run_id}")
+
+
+def print_failed_documents(run_id: str, documents) -> None:
+    if not documents:
+        print(f"没有未完成文件: runs/{run_id}")
+        return
+    print(f"未完成文件: runs/{run_id}, count={len(documents)}")
+    for document in documents:
+        error_text = document.errors[-1] if document.errors else "无错误记录"
+        print(f"  - {document.source_id} | {document.status} | {document.original_name} | {error_text}")
 
 
 if __name__ == "__main__":

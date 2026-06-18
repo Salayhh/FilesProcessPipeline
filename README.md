@@ -50,14 +50,18 @@ MINERU_MODEL_VERSION=pipeline
 MINERU_ENABLE_TABLE=true
 MINERU_ENABLE_FORMULA=false
 MINERU_LANGUAGE=ch
+MINERU_UPLOAD_TIMEOUT=60
+MINERU_UPLOAD_MAX_RETRIES=2
+MINERU_UPLOAD_RETRY_DELAY=10
 KIMI_TIMEOUT=300
 KIMI_MAX_RETRIES=2
 KIMI_RETRY_DELAY=5
+KIMI_CONCURRENCY=4
 IMAGE_BASE_URL=http://your-server/pic
 OUTPUT_FORMAT=md
 ```
 
-`.env` 会覆盖系统环境变量。`OUTPUT_FORMAT` 只允许 `md` 或 `txt`。
+`.env` 会覆盖系统环境变量。`OUTPUT_FORMAT` 只允许 `md` 或 `txt`。`KIMI_CONCURRENCY` 控制 Kimi 阶段并发处理文件数，必须是大于等于 1 的整数。
 
 ### 3. 准备输入文件
 
@@ -118,6 +122,15 @@ python3 -m files_pipeline.cli archive --run-id demo
 ```
 
 归档只会把 `runs/{run_id}/` 移动到 `data/{run_id}/`，不会处理 `input/`。
+
+查看和补跑失败文件：
+
+```bash
+python3 -m files_pipeline.cli failed --run-id demo
+python3 -m files_pipeline.cli retry-failed --run-id demo
+```
+
+`retry-failed` 会读取原 run 的 `manifest.json` 和 `source/` 快照，只补跑未完成文件缺失的阶段，并把结果写回同一个 `runs/{run_id}/`。
 
 ## 目录结构
 
@@ -204,7 +217,7 @@ python3 -m unittest discover -s tests
 - MinerU zip 安全解压、Markdown 规范化、大小写扩展名、mock 解析流程
 - Kimi 空文件、重试、失败记录、token 统计
 - Render 标题处理、图片复制、相对/绝对链接
-- Pipeline 编排、失败 manifest、默认不归档
+- Pipeline 编排、失败 manifest、部分成功状态、失败补跑、默认不归档
 - 简易入口和高级 CLI 参数分发
 
 完整 Pipeline 依赖 MinerU/Kimi 网络 API 和真实 Token，不建议作为普通测试命令。

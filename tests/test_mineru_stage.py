@@ -2,8 +2,12 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
+
+import requests
 
 from files_pipeline.clients.mineru import MinerUAPIError
+from files_pipeline.clients.mineru import MinerUClient
 from files_pipeline.models import DocumentRecord, RunContext
 from files_pipeline.pipeline import collect_input_files
 from files_pipeline.stages.mineru import MinerUStage
@@ -61,6 +65,32 @@ class DataIdResultClient(FakeMinerUClient):
 
 
 class MinerUStageTest(unittest.TestCase):
+    def test_client_retries_upload_timeout(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            settings = make_settings(
+                temp_path,
+                mineru_upload_max_retries=1,
+                mineru_upload_retry_delay=0,
+                mineru_upload_timeout=1,
+            )
+            source_path = temp_path / "doc.pdf"
+            source_path.write_bytes(b"pdf")
+            response = requests.Response()
+            response.status_code = 200
+            calls = []
+
+            def put(url, data, timeout):
+                calls.append((url, timeout))
+                if len(calls) == 1:
+                    raise requests.exceptions.ReadTimeout("timeout")
+                return response
+
+            with patch("files_pipeline.clients.mineru.requests.put", side_effect=put):
+                MinerUClient(settings).upload_file(source_path, "https://upload/doc.pdf")
+
+            self.assertEqual(calls, [("https://upload/doc.pdf", 1), ("https://upload/doc.pdf", 1)])
+
     def test_extract_zip_safely_rejects_path_traversal(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)

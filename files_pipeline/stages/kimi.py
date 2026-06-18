@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from pathlib import Path
 
 from files_pipeline.clients.kimi import KimiClient
 from files_pipeline.config import Settings
-from files_pipeline.models import DocumentRecord, RunContext, StageResult
+from files_pipeline.models import DocumentRecord, RunContext, StageResult, TokenUsage
 from files_pipeline.progress import format_duration
 
 
@@ -26,7 +27,8 @@ class KimiStage:
         print(
             "[Kimi] 配置: "
             f"model={self.settings.kimi_model}, "
-            f"base_url={self.settings.kimi_base_url}",
+            f"base_url={self.settings.kimi_base_url}, "
+            f"concurrency={self.settings.kimi_concurrency}",
             flush=True,
         )
         if not candidates:
@@ -35,21 +37,28 @@ class KimiStage:
             print("[Kimi] 没有 MinerU Markdown 可供处理", flush=True)
             return result
 
-        for index, document in enumerate(candidates, 1):
-            try:
-                print(f"[Kimi] 文件 {index}/{len(candidates)}: {document.original_name}", flush=True)
-                output_path = self._process_document(context, document, result)
-                document.kimi_markdown_path = output_path
-                document.status = "kimi_done"
-                result.success += 1
-                result.output_files.append(output_path)
-            except Exception as exc:
-                message = str(exc)
-                document.add_error(message)
-                result.failed += 1
-                result.failed_documents.append(document.source_id)
-                result.errors[document.source_id] = message
-                print(f"[Kimi] 整理失败: {document.original_name}: {message}", flush=True)
+        max_workers = min(self.settings.kimi_concurrency, len(candidates))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_document = {
+                executor.submit(self._process_document, context, document, index, len(candidates)): document
+                for index, document in enumerate(candidates, 1)
+            }
+            for future in as_completed(future_to_document):
+                document = future_to_document[future]
+                try:
+                    output_path, token_usage = future.result()
+                    document.kimi_markdown_path = output_path
+                    document.status = "kimi_done"
+                    result.success += 1
+                    result.output_files.append(output_path)
+                    result.token_usage.add(token_usage)
+                except Exception as exc:
+                    message = str(exc)
+                    document.add_error(message)
+                    result.failed += 1
+                    result.failed_documents.append(document.source_id)
+                    result.errors[document.source_id] = message
+                    print(f"[Kimi] 整理失败: {document.original_name}: {message}", flush=True)
         usage = result.token_usage
         print(
             "[Kimi] 完成: "
@@ -60,8 +69,15 @@ class KimiStage:
         )
         return result
 
-    def _process_document(self, context: RunContext, document: DocumentRecord, stage_result: StageResult) -> Path:
+    def _process_document(
+        self,
+        context: RunContext,
+        document: DocumentRecord,
+        index: int,
+        total: int,
+    ) -> tuple[Path, TokenUsage]:
         start = time.monotonic()
+        print(f"[Kimi] 文件 {index}/{total}: {document.original_name}", flush=True)
         if not document.mineru_markdown_path:
             raise ValueError("缺少 MinerU Markdown 路径")
         source_content = read_text_with_fallback(document.mineru_markdown_path)
@@ -74,7 +90,6 @@ class KimiStage:
             try:
                 print(f"[Kimi] 调用 API: {document.original_name}, attempt={attempt}/{attempts}", flush=True)
                 completion = self.client.complete(source_content, document.original_name)
-                stage_result.token_usage.add(completion.token_usage)
                 output_path = context.kimi_dir / f"{document.source_id}.md"
                 output_path.write_text(completion.content, encoding="utf-8")
                 usage = completion.token_usage
@@ -85,7 +100,7 @@ class KimiStage:
                     f"用时 {format_duration(time.monotonic() - start)}",
                     flush=True,
                 )
-                return output_path
+                return output_path, completion.token_usage
             except Exception as exc:
                 last_error = exc
                 print(f"[Kimi] 调用失败: {document.original_name}, attempt={attempt}/{attempts}: {exc}", flush=True)

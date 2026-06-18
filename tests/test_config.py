@@ -49,6 +49,9 @@ class SettingsTest(unittest.TestCase):
                         "MINERU_ENABLE_TABLE=false",
                         "MINERU_ENABLE_FORMULA=true",
                         "MINERU_LANGUAGE=en",
+                        "MINERU_UPLOAD_TIMEOUT=90",
+                        "MINERU_UPLOAD_MAX_RETRIES=5",
+                        "MINERU_UPLOAD_RETRY_DELAY=3",
                     ]
                 ),
                 encoding="utf-8",
@@ -61,6 +64,19 @@ class SettingsTest(unittest.TestCase):
             self.assertFalse(settings.mineru_enable_table)
             self.assertTrue(settings.mineru_enable_formula)
             self.assertEqual(settings.mineru_language, "en")
+            self.assertEqual(settings.mineru_upload_timeout, 90)
+            self.assertEqual(settings.mineru_upload_max_retries, 5)
+            self.assertEqual(settings.mineru_upload_retry_delay, 3)
+
+    def test_kimi_concurrency_is_loaded_from_env(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            (temp_path / ".env").write_text("KIMI_CONCURRENCY=12\n", encoding="utf-8")
+
+            with patch.dict(os.environ, {}, clear=True):
+                settings = Settings.from_env(base_dir=temp_path)
+
+            self.assertEqual(settings.kimi_concurrency, 12)
 
     def test_missing_required_keys_are_reported(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -82,6 +98,14 @@ class SettingsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             (temp_path / ".env").write_text("KIMI_TIMEOUT=abc\n", encoding="utf-8")
+
+            with self.assertRaises(ValueError):
+                Settings.from_env(base_dir=temp_path)
+
+    def test_invalid_kimi_concurrency_fails_fast(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            (temp_path / ".env").write_text("KIMI_CONCURRENCY=0\n", encoding="utf-8")
 
             with self.assertRaises(ValueError):
                 Settings.from_env(base_dir=temp_path)

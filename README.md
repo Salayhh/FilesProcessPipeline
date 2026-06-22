@@ -87,6 +87,9 @@ cp your-document.pdf input/
 
 文件扩展名按大小写不敏感处理，例如 `.PDF` 可以被收集。
 
+PowerPoint 文件中的可编辑统计图可能包含嵌入的图表 XML 或 Excel 数据。MinerU 解析 `.ppt/.pptx`
+时可能会把这类图表背后的数据点展开成很长的 HTML 表格（`<table>...</table>`），极端情况下会生成几十万甚至上百万字符的 Markdown，影响后续 Kimi 整理。遇到这类文件时，建议先人工将 PPT/PPTX 导出为 PDF，再把 PDF 放入 `input/` 解析；导出为 PDF 后，图表通常会按页面视觉效果处理，不再展开底层数据表。
+
 ### 4. 日常运行
 
 ```bash

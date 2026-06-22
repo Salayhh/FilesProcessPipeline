@@ -132,6 +132,60 @@ class MinerUStageTest(unittest.TestCase):
 
             self.assertEqual([path.name for path in files], ["A.PDF", "B.pptx"])
 
+    def test_chunk_documents_respects_submit_limit_per_minute(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            settings = make_settings(
+                temp_path,
+                mineru_max_files_per_batch=200,
+                mineru_submit_limit_per_minute=50,
+            )
+            documents = [
+                DocumentRecord(
+                    source_id=f"{index:04d}_doc",
+                    original_path=temp_path / f"doc-{index}.pdf",
+                    source_path=temp_path / f"source-{index}.pdf",
+                    original_name=f"doc-{index}.pdf",
+                    original_stem=f"doc-{index}",
+                    extension=".pdf",
+                )
+                for index in range(51)
+            ]
+            stage = MinerUStage(settings, client=FakeMinerUClient(b""))
+
+            chunks = stage._chunk_documents(documents)
+
+            self.assertEqual([len(chunk) for chunk in chunks], [50, 1])
+
+    def test_wait_for_submit_slot_waits_for_window_capacity(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            settings = make_settings(temp_path, mineru_submit_limit_per_minute=50)
+            current_time = 100.0
+            sleeps = []
+
+            def clock():
+                return current_time
+
+            def sleeper(seconds):
+                nonlocal current_time
+                sleeps.append(seconds)
+                current_time += seconds
+
+            stage = MinerUStage(
+                settings,
+                client=FakeMinerUClient(b""),
+                clock=clock,
+                sleeper=sleeper,
+            )
+            stage._submit_timestamps = [50.0] * 45
+
+            stage._wait_for_submit_slot(10, 2, 3)
+
+            self.assertEqual(len(sleeps), 1)
+            self.assertAlmostEqual(sleeps[0], 10.0)
+            self.assertEqual(stage._submit_timestamps, [110.0] * 10)
+
     def test_run_processes_successful_mocked_mineru_flow(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)

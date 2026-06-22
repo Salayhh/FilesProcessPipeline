@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import re
 import time
 import zipfile
@@ -13,10 +14,22 @@ from files_pipeline.models import DocumentRecord, RunContext, StageResult
 from files_pipeline.progress import format_duration
 
 
+MINERU_SUBMIT_WINDOW_SECONDS = 60.0
+
+
 class MinerUStage:
-    def __init__(self, settings: Settings, client: MinerUClient | None = None):
+    def __init__(
+        self,
+        settings: Settings,
+        client: MinerUClient | None = None,
+        clock: Callable[[], float] | None = None,
+        sleeper: Callable[[float], None] | None = None,
+    ):
         self.settings = settings
         self.client = client or MinerUClient(settings)
+        self._clock = clock or time.monotonic
+        self._sleeper = sleeper or time.sleep
+        self._submit_timestamps: list[float] = []
 
     def run(self, context: RunContext, documents: list[DocumentRecord]) -> StageResult:
         start = time.monotonic()
@@ -28,7 +41,8 @@ class MinerUStage:
             f"model_version={self.settings.mineru_model_version}, "
             f"enable_table={self.settings.mineru_enable_table}, "
             f"enable_formula={self.settings.mineru_enable_formula}, "
-            f"language={self.settings.mineru_language}",
+            f"language={self.settings.mineru_language}, "
+            f"submit_limit={self.settings.mineru_submit_limit_per_minute}/min",
             flush=True,
         )
         if not pending_documents:
@@ -48,8 +62,45 @@ class MinerUStage:
         return result
 
     def _chunk_documents(self, documents: list[DocumentRecord]) -> list[list[DocumentRecord]]:
-        size = max(1, self.settings.mineru_max_files_per_batch)
+        size = min(
+            max(1, self.settings.mineru_max_files_per_batch),
+            max(1, self.settings.mineru_submit_limit_per_minute),
+        )
         return [documents[index : index + size] for index in range(0, len(documents), size)]
+
+    def _wait_for_submit_slot(self, file_count: int, batch_index: int, batch_total: int) -> None:
+        if file_count <= 0:
+            return
+
+        limit = max(1, self.settings.mineru_submit_limit_per_minute)
+        if file_count > limit:
+            raise ValueError(f"MinerU 单次提交文件数 {file_count} 超过每分钟限制 {limit}")
+
+        now = self._clock()
+        self._submit_timestamps = self._active_submit_timestamps(now)
+        overflow = len(self._submit_timestamps) + file_count - limit
+        if overflow > 0:
+            wait_seconds = max(
+                0.0,
+                MINERU_SUBMIT_WINDOW_SECONDS - (now - self._submit_timestamps[overflow - 1]),
+            )
+            if wait_seconds > 0:
+                print(
+                    f"[MinerU] 批次 {batch_index}/{batch_total}: 提交限流，等待 {format_duration(wait_seconds)}",
+                    flush=True,
+                )
+                self._sleeper(wait_seconds)
+                now = self._clock()
+                self._submit_timestamps = self._active_submit_timestamps(now)
+
+        self._submit_timestamps.extend([now] * file_count)
+
+    def _active_submit_timestamps(self, now: float) -> list[float]:
+        return [
+            timestamp
+            for timestamp in self._submit_timestamps
+            if now - timestamp < MINERU_SUBMIT_WINDOW_SECONDS
+        ]
 
     def _process_batch(
         self,
@@ -65,6 +116,7 @@ class MinerUStage:
                 {"name": upload_names[document.source_id], "data_id": self._mineru_data_id(document)}
                 for document in documents
             ]
+            self._wait_for_submit_slot(len(file_infos), batch_index, batch_total)
             print(f"[MinerU] 批次 {batch_index}/{batch_total}: 申请上传链接...", flush=True)
             batch_id, upload_urls = self.client.apply_upload_urls(file_infos)
             print(f"[MinerU] 批次 {batch_index}/{batch_total}: batch_id={batch_id}", flush=True)

@@ -18,6 +18,7 @@ def make_settings(base_dir: Path, **overrides) -> Settings:
         "mineru_enable_formula": False,
         "mineru_language": "ch",
         "mineru_max_files_per_batch": 200,
+        "mineru_submit_limit_per_minute": 50,
         "mineru_poll_interval": 0,
         "mineru_max_poll_time": 1,
         "mineru_max_query_errors": 1,

@@ -79,7 +79,8 @@ class Settings:
     mineru_enable_table: bool = True
     mineru_enable_formula: bool = False
     mineru_language: str = "ch"
-    mineru_max_files_per_batch: int = 200
+    mineru_max_files_per_batch: int = 50
+    mineru_submit_limit_per_minute: int = 50
     mineru_poll_interval: int = 10
     mineru_max_poll_time: int = 3600
     mineru_max_query_errors: int = 10
@@ -136,6 +137,8 @@ class Settings:
             mineru_enable_table=_get_bool_env("MINERU_ENABLE_TABLE", True),
             mineru_enable_formula=_get_bool_env("MINERU_ENABLE_FORMULA", False),
             mineru_language=os.getenv("MINERU_LANGUAGE", "ch"),
+            mineru_max_files_per_batch=_get_positive_int_env("MINERU_MAX_FILES_PER_BATCH", 50),
+            mineru_submit_limit_per_minute=_get_positive_int_env("MINERU_SUBMIT_LIMIT_PER_MINUTE", 50),
             mineru_max_poll_time=_get_int_env("MINERU_MAX_POLL_TIME", 3600),
             mineru_max_query_errors=_get_int_env("MINERU_MAX_QUERY_ERRORS", 10),
             mineru_upload_timeout=_get_positive_int_env("MINERU_UPLOAD_TIMEOUT", 60),

@@ -55,6 +55,8 @@ class SettingsTest(unittest.TestCase):
                         "MINERU_ENABLE_TABLE=false",
                         "MINERU_ENABLE_FORMULA=true",
                         "MINERU_LANGUAGE=en",
+                        "MINERU_MAX_FILES_PER_BATCH=25",
+                        "MINERU_SUBMIT_LIMIT_PER_MINUTE=40",
                         "MINERU_UPLOAD_TIMEOUT=90",
                         "MINERU_UPLOAD_MAX_RETRIES=5",
                         "MINERU_UPLOAD_RETRY_DELAY=3",
@@ -70,6 +72,8 @@ class SettingsTest(unittest.TestCase):
             self.assertFalse(settings.mineru_enable_table)
             self.assertTrue(settings.mineru_enable_formula)
             self.assertEqual(settings.mineru_language, "en")
+            self.assertEqual(settings.mineru_max_files_per_batch, 25)
+            self.assertEqual(settings.mineru_submit_limit_per_minute, 40)
             self.assertEqual(settings.mineru_upload_timeout, 90)
             self.assertEqual(settings.mineru_upload_max_retries, 5)
             self.assertEqual(settings.mineru_upload_retry_delay, 3)

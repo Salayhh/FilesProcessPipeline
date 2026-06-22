@@ -50,6 +50,8 @@ MINERU_MODEL_VERSION=pipeline
 MINERU_ENABLE_TABLE=true
 MINERU_ENABLE_FORMULA=false
 MINERU_LANGUAGE=ch
+MINERU_MAX_FILES_PER_BATCH=50
+MINERU_SUBMIT_LIMIT_PER_MINUTE=50
 MINERU_UPLOAD_TIMEOUT=60
 MINERU_UPLOAD_MAX_RETRIES=2
 MINERU_UPLOAD_RETRY_DELAY=10
@@ -64,7 +66,7 @@ SANITIZE_ENTITIES_PATH=data/private/sensitive_entities.json
 OUTPUT_FORMAT=md
 ```
 
-`.env` 会覆盖系统环境变量。`OUTPUT_FORMAT` 只允许 `md` 或 `txt`。`KIMI_CONCURRENCY` 控制 Kimi 阶段并发处理文件数，必须是大于等于 1 的整数。`ASSETS_DIR` 留空时图片写入 `runs/{run_id}/assets/`，填写后图片写入 `ASSETS_DIR/{run_id}/`。`SANITIZE_ENABLED=true` 时会在 MinerU 和 Kimi 之间执行 Markdown 脱敏。
+`.env` 会覆盖系统环境变量。`OUTPUT_FORMAT` 只允许 `md` 或 `txt`。`MINERU_SUBMIT_LIMIT_PER_MINUTE` 默认 50，用于遵守 MinerU 每分钟最多提交 50 个文件的限制；`MINERU_MAX_FILES_PER_BATCH` 不会超过该值。`KIMI_CONCURRENCY` 控制 Kimi 阶段并发处理文件数，必须是大于等于 1 的整数。`ASSETS_DIR` 留空时图片写入 `runs/{run_id}/assets/`，填写后图片写入 `ASSETS_DIR/{run_id}/`。`SANITIZE_ENABLED=true` 时会在 MinerU 和 Kimi 之间执行 Markdown 脱敏。
 
 ### 3. 准备输入文件
 

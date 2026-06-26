@@ -23,12 +23,12 @@ class RenderStage:
         context.final_dir.mkdir(parents=True, exist_ok=True)
         context.assets_dir.mkdir(parents=True, exist_ok=True)
 
-        candidates = [document for document in documents if document.kimi_markdown_path]
-        print(f"[Render] 开始渲染: {len(candidates)}/{len(documents)} 个 Kimi Markdown", flush=True)
+        candidates = [document for document in documents if document.organized_markdown_path]
+        print(f"[Render] 开始渲染: {len(candidates)}/{len(documents)} 个整理后 Markdown", flush=True)
         if not candidates:
             result.failed = len(documents)
-            result.errors["input"] = "没有 Kimi Markdown 可供渲染"
-            print("[Render] 没有 Kimi Markdown 可供渲染", flush=True)
+            result.errors["input"] = "没有整理后 Markdown 可供渲染"
+            print("[Render] 没有整理后 Markdown 可供渲染", flush=True)
             return result
 
         for index, document in enumerate(candidates, 1):
@@ -56,10 +56,10 @@ class RenderStage:
         return result
 
     def _render_document(self, context: RunContext, document: DocumentRecord) -> tuple[Path, int]:
-        if not document.kimi_markdown_path:
-            raise ValueError("缺少 Kimi Markdown 路径")
+        if not document.organized_markdown_path:
+            raise ValueError("缺少整理后 Markdown 路径")
 
-        content = document.kimi_markdown_path.read_text(encoding="utf-8")
+        content = document.organized_markdown_path.read_text(encoding="utf-8")
         bad_item_title = extract_bad_item_title(content)
         if bad_item_title:
             content = process_markdown_content(content, bad_item_title, self.settings.section_separator)

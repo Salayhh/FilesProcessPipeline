@@ -1,4 +1,4 @@
-"""Stage 1.5: sanitize MinerU Markdown before sending it to Kimi."""
+"""Stage 1.5: sanitize MinerU Markdown before sending it to the LLM."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any
 from files_pipeline.config import Settings
 from files_pipeline.models import DocumentRecord, RunContext, StageResult
 from files_pipeline.progress import format_duration
-from files_pipeline.stages.kimi import read_text_with_fallback
+from files_pipeline.stages.organize import read_text_with_fallback
 
 
 Replacement = tuple[str, str]

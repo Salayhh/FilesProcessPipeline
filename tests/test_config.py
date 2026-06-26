@@ -15,8 +15,8 @@ class SettingsTest(unittest.TestCase):
                 "\n".join(
                     [
                         "MINERU_API_TOKEN=file-mineru",
-                        "KIMI_API_KEY=file-kimi",
-                        "KIMI_MODEL=from-file",
+                        "LLM_API_KEY=file-llm",
+                        "LLM_MODEL=from-file",
                         "ASSETS_DIR=custom-assets",
                         "OUTPUT_FORMAT=txt",
                         "SANITIZE_ENABLED=true",
@@ -29,8 +29,8 @@ class SettingsTest(unittest.TestCase):
                 os.environ,
                 {
                     "MINERU_API_TOKEN": "shell-mineru",
-                    "KIMI_API_KEY": "shell-kimi",
-                    "KIMI_MODEL": "from-shell",
+                    "LLM_API_KEY": "shell-llm",
+                    "LLM_MODEL": "from-shell",
                     "OUTPUT_FORMAT": "md",
                 },
                 clear=True,
@@ -38,8 +38,8 @@ class SettingsTest(unittest.TestCase):
                 settings = Settings.from_env(base_dir=temp_path)
 
             self.assertEqual(settings.mineru_api_token, "file-mineru")
-            self.assertEqual(settings.kimi_api_key, "file-kimi")
-            self.assertEqual(settings.kimi_model, "from-file")
+            self.assertEqual(settings.llm_api_key, "file-llm")
+            self.assertEqual(settings.llm_model, "from-file")
             self.assertEqual(settings.assets_base_dir, temp_path.resolve() / "custom-assets")
             self.assertEqual(settings.output_format, "txt")
             self.assertTrue(settings.sanitize_enabled)
@@ -78,15 +78,38 @@ class SettingsTest(unittest.TestCase):
             self.assertEqual(settings.mineru_upload_max_retries, 5)
             self.assertEqual(settings.mineru_upload_retry_delay, 3)
 
-    def test_kimi_concurrency_is_loaded_from_env(self):
+    def test_llm_concurrency_is_loaded_from_env(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            (temp_path / ".env").write_text("KIMI_CONCURRENCY=12\n", encoding="utf-8")
+            (temp_path / ".env").write_text("LLM_CONCURRENCY=12\n", encoding="utf-8")
 
             with patch.dict(os.environ, {}, clear=True):
                 settings = Settings.from_env(base_dir=temp_path)
 
-            self.assertEqual(settings.kimi_concurrency, 12)
+            self.assertEqual(settings.llm_concurrency, 12)
+
+    def test_legacy_kimi_env_names_are_supported(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            (temp_path / ".env").write_text(
+                "\n".join(
+                    [
+                        "KIMI_API_KEY=legacy-key",
+                        "KIMI_MODEL=legacy-model",
+                        "KIMI_BASE_URL=https://legacy.example/v1",
+                        "KIMI_CONCURRENCY=3",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {}, clear=True):
+                settings = Settings.from_env(base_dir=temp_path)
+
+            self.assertEqual(settings.llm_api_key, "legacy-key")
+            self.assertEqual(settings.llm_model, "legacy-model")
+            self.assertEqual(settings.llm_base_url, "https://legacy.example/v1")
+            self.assertEqual(settings.llm_concurrency, 3)
 
     def test_missing_required_keys_are_reported(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -94,7 +117,7 @@ class SettingsTest(unittest.TestCase):
             with patch.dict(os.environ, {}, clear=True):
                 settings = Settings.from_env(base_dir=temp_path, env_file=temp_path / "missing.env")
 
-            self.assertEqual(settings.missing_required_keys(), ["MINERU_API_TOKEN", "KIMI_API_KEY"])
+            self.assertEqual(settings.missing_required_keys(), ["MINERU_API_TOKEN", "LLM_API_KEY"])
 
     def test_invalid_output_format_fails_fast(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -107,15 +130,15 @@ class SettingsTest(unittest.TestCase):
     def test_invalid_integer_env_fails_fast(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            (temp_path / ".env").write_text("KIMI_TIMEOUT=abc\n", encoding="utf-8")
+            (temp_path / ".env").write_text("LLM_TIMEOUT=abc\n", encoding="utf-8")
 
             with self.assertRaises(ValueError):
                 Settings.from_env(base_dir=temp_path)
 
-    def test_invalid_kimi_concurrency_fails_fast(self):
+    def test_invalid_llm_concurrency_fails_fast(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            (temp_path / ".env").write_text("KIMI_CONCURRENCY=0\n", encoding="utf-8")
+            (temp_path / ".env").write_text("LLM_CONCURRENCY=0\n", encoding="utf-8")
 
             with self.assertRaises(ValueError):
                 Settings.from_env(base_dir=temp_path)

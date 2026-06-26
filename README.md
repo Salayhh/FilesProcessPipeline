@@ -1,6 +1,6 @@
 # 文档结构化处理 Pipeline v2
 
-这是一个 Python 文档结构化处理 Pipeline，用于把 PDF、Word、PPT、图片、HTML 等输入文件依次经过 MinerU 解析、Kimi 整理、Markdown/图片渲染，最终生成结构化 Markdown 或文本结果。
+这是一个 Python 文档结构化处理 Pipeline，用于把 PDF、Word、PPT、图片、HTML 等输入文件依次经过 MinerU 解析、OpenAI-compatible LLM 整理、Markdown/图片渲染，最终生成结构化 Markdown 或文本结果。
 
 v2 的核心变化：
 
@@ -20,7 +20,7 @@ python3 -m pip install -r requirements.txt
 依赖包括：
 
 - `requests`：调用 MinerU API 和下载解析结果
-- `openai`：以 OpenAI SDK 兼容方式调用 Kimi API
+- `openai`：以 OpenAI SDK 兼容方式调用阶段二 LLM API
 - `python-dotenv`：读取 `.env`
 
 ### 2. 配置环境变量
@@ -36,9 +36,9 @@ cp .env.example .env
 ```env
 MINERU_BASE_URL=https://mineru.net/api/v4
 MINERU_API_TOKEN=your_mineru_token_here
-KIMI_API_KEY=sk-your_kimi_api_key_here
-KIMI_MODEL=kimi-k2.5
-KIMI_BASE_URL=https://api.moonshot.cn/v1
+LLM_API_KEY=sk-your_llm_api_key_here
+LLM_MODEL=kimi-k2.5
+LLM_BASE_URL=https://api.moonshot.cn/v1
 ```
 
 可选：
@@ -55,10 +55,10 @@ MINERU_SUBMIT_LIMIT_PER_MINUTE=50
 MINERU_UPLOAD_TIMEOUT=60
 MINERU_UPLOAD_MAX_RETRIES=2
 MINERU_UPLOAD_RETRY_DELAY=10
-KIMI_TIMEOUT=300
-KIMI_MAX_RETRIES=2
-KIMI_RETRY_DELAY=5
-KIMI_CONCURRENCY=4
+LLM_TIMEOUT=300
+LLM_MAX_RETRIES=2
+LLM_RETRY_DELAY=5
+LLM_CONCURRENCY=4
 ASSETS_DIR=/your/custom/assets/root
 IMAGE_BASE_URL=http://your-server/pic
 SANITIZE_ENABLED=false
@@ -66,7 +66,9 @@ SANITIZE_ENTITIES_PATH=data/private/sensitive_entities.json
 OUTPUT_FORMAT=md
 ```
 
-`.env` 会覆盖系统环境变量。`OUTPUT_FORMAT` 只允许 `md` 或 `txt`。`MINERU_SUBMIT_LIMIT_PER_MINUTE` 默认 50，用于遵守 MinerU 每分钟最多提交 50 个文件的限制；`MINERU_MAX_FILES_PER_BATCH` 不会超过该值。`KIMI_CONCURRENCY` 控制 Kimi 阶段并发处理文件数，必须是大于等于 1 的整数。`ASSETS_DIR` 留空时图片写入 `runs/{run_id}/assets/`，填写后图片写入 `ASSETS_DIR/{run_id}/`。`SANITIZE_ENABLED=true` 时会在 MinerU 和 Kimi 之间执行 Markdown 脱敏。
+`.env` 会覆盖系统环境变量。`OUTPUT_FORMAT` 只允许 `md` 或 `txt`。`MINERU_SUBMIT_LIMIT_PER_MINUTE` 默认 50，用于遵守 MinerU 每分钟最多提交 50 个文件的限制；`MINERU_MAX_FILES_PER_BATCH` 不会超过该值。`LLM_CONCURRENCY` 控制整理阶段并发处理文件数，必须是大于等于 1 的整数。`ASSETS_DIR` 留空时图片写入 `runs/{run_id}/assets/`，填写后图片写入 `ASSETS_DIR/{run_id}/`。`SANITIZE_ENABLED=true` 时会在 MinerU 和 LLM 整理之间执行 Markdown 脱敏。
+
+阶段二使用 OpenAI-compatible Chat Completions 接口。旧版 `KIMI_API_KEY`、`KIMI_MODEL`、`KIMI_BASE_URL`、`KIMI_TIMEOUT`、`KIMI_MAX_RETRIES`、`KIMI_RETRY_DELAY`、`KIMI_CONCURRENCY` 仍会作为兼容 fallback 读取，但建议新配置统一使用 `LLM_*`。
 
 ### 3. 准备输入文件
 
@@ -88,7 +90,7 @@ cp your-document.pdf input/
 文件扩展名按大小写不敏感处理，例如 `.PDF` 可以被收集。
 
 PowerPoint 文件中的可编辑统计图可能包含嵌入的图表 XML 或 Excel 数据。MinerU 解析 `.ppt/.pptx`
-时可能会把这类图表背后的数据点展开成很长的 HTML 表格（`<table>...</table>`），极端情况下会生成几十万甚至上百万字符的 Markdown，影响后续 Kimi 整理。遇到这类文件时，建议先人工将 PPT/PPTX 导出为 PDF，再把 PDF 放入 `input/` 解析；导出为 PDF 后，图表通常会按页面视觉效果处理，不再展开底层数据表。
+时可能会把这类图表背后的数据点展开成很长的 HTML 表格（`<table>...</table>`），极端情况下会生成几十万甚至上百万字符的 Markdown，影响后续 LLM 整理。遇到这类文件时，建议先人工将 PPT/PPTX 导出为 PDF，再把 PDF 放入 `input/` 解析；导出为 PDF 后，图表通常会按页面视觉效果处理，不再展开底层数据表。
 
 ### 4. 日常运行
 
@@ -101,7 +103,7 @@ python3 pipeline.py
 1. 从 `input/` 读取文件并复制快照到 `runs/{run_id}/source/`
 2. 调用 MinerU，写入 `runs/{run_id}/mineru/{source_id}/`
 3. 如果启用脱敏，写入 `runs/{run_id}/sanitized/{source_id}.md`
-4. 调用 Kimi，写入 `runs/{run_id}/kimi/{source_id}.md`
+4. 调用 LLM，写入 `runs/{run_id}/organized/{source_id}.md`
 5. 复制图片到 `runs/{run_id}/assets/{source_id}/`
 6. 写入最终结果到 `runs/{run_id}/final/{source_id}.{md|txt}`
 7. 写入运行记录 `runs/{run_id}/manifest.json`
@@ -144,7 +146,7 @@ python3 -m files_pipeline.cli retry-failed --run-id demo
 
 ## MinerU Markdown 脱敏
 
-如需避免把供应商、公司名称发送给 Kimi，可以启用脱敏阶段：
+如需避免把供应商、公司名称发送给阶段二 LLM，可以启用脱敏阶段：
 
 ```env
 SANITIZE_ENABLED=true
@@ -166,7 +168,7 @@ SANITIZE_ENTITIES_PATH=data/private/sensitive_entities.json
 runs/{run_id}/sanitized/{source_id}.md
 ```
 
-启用后，Kimi 只读取脱敏后的 Markdown；如果某个文档没有脱敏产物，Kimi 不会回退读取 MinerU 原文。脱敏会跳过 Markdown 代码块、行内代码和链接目标，避免破坏图片路径；图片本身、印章、截图中的文字不会被处理。
+启用后，整理阶段只读取脱敏后的 Markdown；如果某个文档没有脱敏产物，不会回退读取 MinerU 原文。脱敏会跳过 Markdown 代码块、行内代码和链接目标，避免破坏图片路径；图片本身、印章、截图中的文字不会被处理。
 
 ## 目录结构
 
@@ -178,15 +180,15 @@ runs/{run_id}/sanitized/{source_id}.md
 │       ├── source/                # 本次输入快照
 │       ├── mineru/{source_id}/    # MinerU 解压结果
 │       ├── sanitized/{source_id}.md # 脱敏后的 Markdown
-│       ├── kimi/{source_id}.md    # Kimi 整理结果
+│       ├── organized/{source_id}.md # LLM 整理结果
 │       ├── assets/{source_id}/    # 复制后的图片
 │       ├── final/{source_id}.md   # 最终输出
 │       └── manifest.json          # 阶段状态、路径、错误、token 统计
 ├── data/                          # 显式 archive 命令的目标
 ├── files_pipeline/
-│   ├── clients/                   # MinerU/Kimi API adapter
-│   ├── stages/                    # MinerU、Kimi、Render 三阶段
-│   ├── prompts/                   # Kimi 模板
+│   ├── clients/                   # MinerU/LLM API adapter
+│   ├── stages/                    # MinerU、Organize、Render 三阶段
+│   ├── prompts/                   # 整理模板
 │   ├── config.py
 │   ├── models.py
 │   ├── pipeline.py
@@ -204,7 +206,7 @@ runs/{run_id}/sanitized/{source_id}.md
 - `run_id`
 - 每个文档的 `source_id`、原始路径、阶段输出路径、状态和错误
 - 每个 stage 的成功/失败数量
-- Kimi token 统计
+- LLM token 统计
 
 不会记录 API Token。
 
@@ -246,7 +248,7 @@ runs/{run_id}/mineru/{source_id}/images/*
 ![现象](http://your-server/pic/{run_id}/{source_id}/image.png)
 ```
 
-当前识别 `![](images/xxx)`、`![alt](images/xxx)` 和 `![alt](./images/xxx)`。
+当前识别 Markdown 图片链接 `![](images/xxx)`、`![alt](images/xxx)`、`![alt](./images/xxx)`，也识别 HTML 图片链接 `<img src="images/xxx">`、`< img src="images/xxx">` 和 `src="./images/xxx"`。
 
 ## 测试
 
@@ -260,13 +262,13 @@ python3 -m unittest discover -s tests
 
 - 配置加载、`.env` override、非法配置、脱敏配置
 - MinerU zip 安全解压、Markdown 规范化、大小写扩展名、mock 解析流程
-- Kimi 空文件、重试、失败记录、token 统计、脱敏输入优先级
+- Organize 空文件、重试、失败记录、token 统计、脱敏输入优先级
 - Sanitize 词表加载、Markdown 替换、代码块和链接目标保护
 - Render 标题处理、图片复制、相对/绝对链接
 - Pipeline 编排、失败 manifest、部分成功状态、失败补跑、默认不归档
 - 简易入口和高级 CLI 参数分发
 
-完整 Pipeline 依赖 MinerU/Kimi 网络 API 和真实 Token，不建议作为普通测试命令。
+完整 Pipeline 依赖 MinerU/LLM 网络 API 和真实 Token，不建议作为普通测试命令。
 
 ## 故障排查
 
@@ -275,7 +277,7 @@ python3 -m unittest discover -s tests
 `python3 pipeline.py` 启动时会验证：
 
 - `MINERU_API_TOKEN`
-- `KIMI_API_KEY`
+- `LLM_API_KEY`
 
 缺少任一配置会直接退出。
 

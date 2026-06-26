@@ -28,25 +28,38 @@ SUPPORTED_EXTENSIONS = (
 )
 
 
-def _get_int_env(name: str, default: int) -> int:
-    value = os.getenv(name)
+def _get_env_value(name: str, fallback_names: tuple[str, ...] = ()) -> tuple[str, str | None]:
+    for candidate in (name, *fallback_names):
+        value = os.getenv(candidate)
+        if value is not None and value != "":
+            return candidate, value
+    return name, None
+
+
+def _get_env(name: str, default: str = "", fallback_names: tuple[str, ...] = ()) -> str:
+    _, value = _get_env_value(name, fallback_names)
+    return default if value is None else value
+
+
+def _get_int_env(name: str, default: int, fallback_names: tuple[str, ...] = ()) -> int:
+    actual_name, value = _get_env_value(name, fallback_names)
     if value is None or value == "":
         return default
     try:
         return int(value)
     except ValueError as exc:
-        raise ValueError(f"{name} 必须是整数，当前值: {value}") from exc
+        raise ValueError(f"{actual_name} 必须是整数，当前值: {value}") from exc
 
 
-def _get_positive_int_env(name: str, default: int) -> int:
-    value = _get_int_env(name, default)
+def _get_positive_int_env(name: str, default: int, fallback_names: tuple[str, ...] = ()) -> int:
+    value = _get_int_env(name, default, fallback_names)
     if value < 1:
         raise ValueError(f"{name} 必须是大于等于 1 的整数，当前值: {value}")
     return value
 
 
-def _get_nonnegative_int_env(name: str, default: int) -> int:
-    value = _get_int_env(name, default)
+def _get_nonnegative_int_env(name: str, default: int, fallback_names: tuple[str, ...] = ()) -> int:
+    value = _get_int_env(name, default, fallback_names)
     if value < 0:
         raise ValueError(f"{name} 必须是大于等于 0 的整数，当前值: {value}")
     return value
@@ -88,13 +101,13 @@ class Settings:
     mineru_upload_max_retries: int = 2
     mineru_upload_retry_delay: int = 10
 
-    kimi_api_key: str | None = None
-    kimi_model: str = "kimi-k2.5"
-    kimi_base_url: str = "https://api.moonshot.cn/v1"
-    kimi_timeout: int = 600
-    kimi_max_retries: int = 2
-    kimi_retry_delay: int = 10
-    kimi_concurrency: int = 4
+    llm_api_key: str | None = None
+    llm_model: str = "kimi-k2.5"
+    llm_base_url: str = "https://api.moonshot.cn/v1"
+    llm_timeout: int = 600
+    llm_max_retries: int = 2
+    llm_retry_delay: int = 10
+    llm_concurrency: int = 4
 
     assets_base_dir: Path | None = None
     image_base_url: str = ""
@@ -103,7 +116,39 @@ class Settings:
     sanitize_enabled: bool = False
     sanitize_entities_path: Path | None = None
     supported_extensions: tuple[str, ...] = field(default_factory=lambda: SUPPORTED_EXTENSIONS)
-    kimi_template_path: Path | None = None
+    organize_template_path: Path | None = None
+
+    @property
+    def kimi_api_key(self) -> str | None:
+        return self.llm_api_key
+
+    @property
+    def kimi_model(self) -> str:
+        return self.llm_model
+
+    @property
+    def kimi_base_url(self) -> str:
+        return self.llm_base_url
+
+    @property
+    def kimi_timeout(self) -> int:
+        return self.llm_timeout
+
+    @property
+    def kimi_max_retries(self) -> int:
+        return self.llm_max_retries
+
+    @property
+    def kimi_retry_delay(self) -> int:
+        return self.llm_retry_delay
+
+    @property
+    def kimi_concurrency(self) -> int:
+        return self.llm_concurrency
+
+    @property
+    def kimi_template_path(self) -> Path | None:
+        return self.organize_template_path
 
     @classmethod
     def from_env(cls, base_dir: Path | None = None, env_file: Path | None = None) -> "Settings":
@@ -124,7 +169,9 @@ class Settings:
         if output_format not in {"md", "txt"}:
             raise ValueError("OUTPUT_FORMAT 只允许 md 或 txt")
 
-        template_path = root / "files_pipeline" / "prompts" / "kimi_bad_report_template.md"
+        template_path = root / "files_pipeline" / "prompts" / "bad_report_template.md"
+        if not template_path.exists():
+            template_path = root / "files_pipeline" / "prompts" / "kimi_bad_report_template.md"
 
         return cls(
             base_dir=root,
@@ -144,17 +191,17 @@ class Settings:
             mineru_upload_timeout=_get_positive_int_env("MINERU_UPLOAD_TIMEOUT", 60),
             mineru_upload_max_retries=_get_nonnegative_int_env("MINERU_UPLOAD_MAX_RETRIES", 2),
             mineru_upload_retry_delay=_get_nonnegative_int_env("MINERU_UPLOAD_RETRY_DELAY", 10),
-            kimi_api_key=os.getenv("KIMI_API_KEY") or None,
-            kimi_model=os.getenv("KIMI_MODEL", "kimi-k2.5"),
-            kimi_base_url=os.getenv("KIMI_BASE_URL", "https://api.moonshot.cn/v1"),
-            kimi_timeout=_get_int_env("KIMI_TIMEOUT", 600),
-            kimi_max_retries=_get_int_env("KIMI_MAX_RETRIES", 2),
-            kimi_retry_delay=_get_int_env("KIMI_RETRY_DELAY", 10),
-            kimi_concurrency=_get_positive_int_env("KIMI_CONCURRENCY", 4),
+            llm_api_key=_get_env("LLM_API_KEY", fallback_names=("KIMI_API_KEY",)) or None,
+            llm_model=_get_env("LLM_MODEL", "kimi-k2.5", fallback_names=("KIMI_MODEL",)),
+            llm_base_url=_get_env("LLM_BASE_URL", "https://api.moonshot.cn/v1", fallback_names=("KIMI_BASE_URL",)),
+            llm_timeout=_get_int_env("LLM_TIMEOUT", 600, fallback_names=("KIMI_TIMEOUT",)),
+            llm_max_retries=_get_int_env("LLM_MAX_RETRIES", 2, fallback_names=("KIMI_MAX_RETRIES",)),
+            llm_retry_delay=_get_int_env("LLM_RETRY_DELAY", 10, fallback_names=("KIMI_RETRY_DELAY",)),
+            llm_concurrency=_get_positive_int_env("LLM_CONCURRENCY", 4, fallback_names=("KIMI_CONCURRENCY",)),
             assets_base_dir=_get_optional_path_env("ASSETS_DIR", root),
             image_base_url=os.getenv("IMAGE_BASE_URL", "").strip(),
             output_format=output_format,
-            kimi_template_path=template_path,
+            organize_template_path=template_path,
             sanitize_enabled=_get_bool_env("SANITIZE_ENABLED", False),
             sanitize_entities_path=_get_optional_path_env("SANITIZE_ENTITIES_PATH", root),
         )
@@ -163,8 +210,8 @@ class Settings:
         missing = []
         if not self.mineru_api_token:
             missing.append("MINERU_API_TOKEN")
-        if not self.kimi_api_key:
-            missing.append("KIMI_API_KEY")
+        if not self.llm_api_key:
+            missing.append("LLM_API_KEY")
         return missing
 
     def ensure_directories(self, extra_dirs: Iterable[Path] = ()) -> None:

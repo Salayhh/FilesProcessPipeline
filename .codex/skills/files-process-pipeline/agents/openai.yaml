@@ -1,0 +1,4 @@
+interface:
+  display_name: "Files Process Pipeline"
+  short_description: "Run the document pipeline CLI"
+  default_prompt: "Use $files-process-pipeline to process documents in this repository with the existing pipeline CLI."

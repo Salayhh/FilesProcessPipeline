@@ -74,11 +74,21 @@ def process_markdown_content(content: str, bad_item_title: str, section_separato
 
 
 def rewrite_image_links(content: str, source_id: str, link_prefix: str) -> str:
-    pattern = re.compile(r"!\[([^\]]*)\]\(\s*(?:\./)?images/([^)]+?)\s*\)")
+    markdown_pattern = re.compile(r"!\[([^\]]*)\]\(\s*(?:\./)?images/([^)]+?)\s*\)")
+    html_pattern = re.compile(
+        r"(<\s*img\b[^>]*?\bsrc\s*=\s*)([\"'])(\s*(?:\./)?images/([^\"'>\s]+)\s*)(\2)",
+        re.IGNORECASE,
+    )
+    normalized_prefix = link_prefix.rstrip("/")
 
-    def replace(match: re.Match[str]) -> str:
+    def replace_markdown(match: re.Match[str]) -> str:
         alt_text = match.group(1)
         image_name = match.group(2).strip()
-        return f"![{alt_text}]({link_prefix.rstrip('/')}/{image_name})"
+        return f"![{alt_text}]({normalized_prefix}/{image_name})"
 
-    return pattern.sub(replace, content)
+    def replace_html(match: re.Match[str]) -> str:
+        image_name = match.group(4).strip()
+        return f"{match.group(1)}{match.group(2)}{normalized_prefix}/{image_name}{match.group(5)}"
+
+    content = markdown_pattern.sub(replace_markdown, content)
+    return html_pattern.sub(replace_html, content)

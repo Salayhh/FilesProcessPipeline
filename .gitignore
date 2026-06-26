@@ -49,6 +49,10 @@ prompt_test/
 process_test/
 
 .DS_Store
-.codex/
+.codex/*
+!.codex/skills/
+.codex/skills/*
+!.codex/skills/files-process-pipeline/
+!.codex/skills/files-process-pipeline/**
 docs/
 /stages/

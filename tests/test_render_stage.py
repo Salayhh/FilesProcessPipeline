@@ -16,8 +16,8 @@ class RenderStageTest(unittest.TestCase):
             settings = make_settings(temp_path)
             context = RunContext.create(settings.runs_dir, "run-1")
             context.ensure_directories()
-            kimi_md = context.kimi_dir / "0001_doc.md"
-            kimi_md.write_text(
+            organized_md = context.organized_dir / "0001_doc.md"
+            organized_md.write_text(
                 "\n".join(
                     [
                         "# 不良项目：A",
@@ -35,7 +35,7 @@ class RenderStageTest(unittest.TestCase):
             images_dir = context.mineru_dir / "0001_doc" / "images"
             images_dir.mkdir(parents=True)
             (images_dir / "a.png").write_bytes(b"image")
-            document = make_document(temp_path, context, kimi_md)
+            document = make_document(temp_path, context, organized_md)
 
             result = RenderStage(settings).run(context, [document])
 
@@ -55,9 +55,9 @@ class RenderStageTest(unittest.TestCase):
             settings = make_settings(temp_path)
             context = RunContext.create(settings.runs_dir, "run-1")
             context.ensure_directories()
-            kimi_md = context.kimi_dir / "0001_doc.md"
-            kimi_md.write_text("## 第一部分：发生状况\n内容", encoding="utf-8")
-            document = make_document(temp_path, context, kimi_md)
+            organized_md = context.organized_dir / "0001_doc.md"
+            organized_md.write_text("## 第一部分：发生状况\n内容", encoding="utf-8")
+            document = make_document(temp_path, context, organized_md)
 
             result = RenderStage(settings).run(context, [document])
 
@@ -70,12 +70,12 @@ class RenderStageTest(unittest.TestCase):
             settings = replace(make_settings(temp_path), image_base_url="https://cdn.example/assets")
             context = RunContext.create(settings.runs_dir, "run-1")
             context.ensure_directories()
-            kimi_md = context.kimi_dir / "0001_doc.md"
-            kimi_md.write_text("# 不良项目：A\n\n![x](images/a.png)", encoding="utf-8")
+            organized_md = context.organized_dir / "0001_doc.md"
+            organized_md.write_text("# 不良项目：A\n\n![x](images/a.png)", encoding="utf-8")
             images_dir = context.mineru_dir / "0001_doc" / "images"
             images_dir.mkdir(parents=True)
             (images_dir / "a.png").write_bytes(b"image")
-            document = make_document(temp_path, context, kimi_md)
+            document = make_document(temp_path, context, organized_md)
 
             RenderStage(settings).run(context, [document])
 
@@ -88,12 +88,12 @@ class RenderStageTest(unittest.TestCase):
             settings = replace(make_settings(temp_path), assets_base_dir=temp_path / "public-assets")
             context = RunContext.create(settings.runs_dir, "run-1", settings.assets_base_dir)
             context.ensure_directories()
-            kimi_md = context.kimi_dir / "0001_doc.md"
-            kimi_md.write_text("# 不良项目：A\n\n![x](images/a.png)", encoding="utf-8")
+            organized_md = context.organized_dir / "0001_doc.md"
+            organized_md.write_text("# 不良项目：A\n\n![x](images/a.png)", encoding="utf-8")
             images_dir = context.mineru_dir / "0001_doc" / "images"
             images_dir.mkdir(parents=True)
             (images_dir / "a.png").write_bytes(b"image")
-            document = make_document(temp_path, context, kimi_md)
+            document = make_document(temp_path, context, organized_md)
 
             RenderStage(settings).run(context, [document])
 
@@ -101,8 +101,33 @@ class RenderStageTest(unittest.TestCase):
             output = document.final_output_path.read_text(encoding="utf-8")
             self.assertIn("![x](../../../public-assets/run-1/0001_doc/a.png)", output)
 
+    def test_render_rewrites_html_img_src_inside_tables(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            settings = make_settings(temp_path)
+            context = RunContext.create(settings.runs_dir, "run-1")
+            context.ensure_directories()
+            organized_md = context.organized_dir / "0001_doc.md"
+            organized_md.write_text(
+                '<table><tr><td>< img src="images/a.jpg"/></td><td>外观OK <img src="./images/b.png"/></td></tr></table>',
+                encoding="utf-8",
+            )
+            images_dir = context.mineru_dir / "0001_doc" / "images"
+            images_dir.mkdir(parents=True)
+            (images_dir / "a.jpg").write_bytes(b"image")
+            (images_dir / "b.png").write_bytes(b"image")
+            document = make_document(temp_path, context, organized_md)
 
-def make_document(temp_path, context, kimi_md):
+            result = RenderStage(settings).run(context, [document])
+
+            self.assertEqual(result.success, 1)
+            self.assertEqual(result.images_copied, 2)
+            output = document.final_output_path.read_text(encoding="utf-8")
+            self.assertIn('< img src="../assets/0001_doc/a.jpg"/>', output)
+            self.assertIn('<img src="../assets/0001_doc/b.png"/>', output)
+
+
+def make_document(temp_path, context, organized_md):
     return DocumentRecord(
         source_id="0001_doc",
         original_path=temp_path / "doc.pdf",
@@ -110,7 +135,7 @@ def make_document(temp_path, context, kimi_md):
         original_name="doc.pdf",
         original_stem="doc",
         extension=".pdf",
-        kimi_markdown_path=kimi_md,
+        organized_markdown_path=organized_md,
     )
 
 

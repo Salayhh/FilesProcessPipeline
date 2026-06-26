@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     parse_parser.add_argument("--input", default=None, help="输入目录，默认使用项目 input")
     parse_parser.add_argument("--run-id", default=None, help="指定运行 ID")
 
-    organize_parser = subparsers.add_parser("organize", help="只执行 Kimi 整理")
+    organize_parser = subparsers.add_parser("organize", help="只执行 LLM 整理")
     organize_parser.add_argument("--run-id", required=True, help="已有运行 ID")
 
     sanitize_parser = subparsers.add_parser("sanitize", help="只执行 MinerU Markdown 脱敏")
@@ -65,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
             print_success(manifest.run_id, "MinerU 解析完成")
         elif args.command == "organize":
             manifest = run_organize(args.run_id)
-            print_success(manifest.run_id, "Kimi 整理完成")
+            print_success(manifest.run_id, "LLM 整理完成")
         elif args.command == "sanitize":
             manifest = run_sanitize(args.run_id)
             print_success(manifest.run_id, "Markdown 脱敏完成")

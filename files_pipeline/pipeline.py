@@ -12,8 +12,8 @@ from pathlib import Path
 from files_pipeline.config import Settings
 from files_pipeline.models import DocumentRecord, RunContext, RunManifest, StageResult
 from files_pipeline.progress import format_duration
-from files_pipeline.stages.kimi import KimiStage
 from files_pipeline.stages.mineru import MinerUStage
+from files_pipeline.stages.organize import OrganizeStage
 from files_pipeline.stages.render import RenderStage
 from files_pipeline.stages.sanitize import SanitizeStage
 
@@ -28,7 +28,8 @@ def run_pipeline(
     settings: Settings | None = None,
     mineru_stage: MinerUStage | None = None,
     sanitize_stage: SanitizeStage | None = None,
-    kimi_stage: KimiStage | None = None,
+    organize_stage: OrganizeStage | None = None,
+    kimi_stage: OrganizeStage | None = None,
     render_stage: RenderStage | None = None,
 ) -> RunManifest:
     start = time.monotonic()
@@ -58,8 +59,8 @@ def run_pipeline(
             sanitize_result = (sanitize_stage or SanitizeStage(settings)).run(context, documents)
             _record_or_abort(manifest, context, sanitize_result, "Sanitize 阶段没有成功文件")
 
-        kimi_result = (kimi_stage or KimiStage(settings)).run(context, documents)
-        _record_or_abort(manifest, context, kimi_result, "Kimi 阶段没有成功文件")
+        organize_result = (organize_stage or kimi_stage or OrganizeStage(settings)).run(context, documents)
+        _record_or_abort(manifest, context, organize_result, "Organize 阶段没有成功文件")
 
         render_result = (render_stage or RenderStage(settings)).run(context, documents)
         _record_or_abort(manifest, context, render_result, "Render 阶段没有成功文件")
@@ -116,19 +117,19 @@ def run_sanitize(run_id: str, settings: Settings | None = None) -> RunManifest:
 def run_organize(run_id: str, settings: Settings | None = None) -> RunManifest:
     start = time.monotonic()
     settings = settings or Settings.from_env()
-    if not settings.kimi_api_key:
-        raise PipelineError("缺少必要配置: KIMI_API_KEY")
+    if not settings.llm_api_key:
+        raise PipelineError("缺少必要配置: LLM_API_KEY")
     context = create_run_context(settings, run_id)
-    print(f"[Pipeline] 开始 Kimi organize: run_id={context.run_id}", flush=True)
+    print(f"[Pipeline] 开始 organize: run_id={context.run_id}", flush=True)
     manifest = RunManifest.load(context.manifest_path)
     if settings.sanitize_enabled:
         sanitize_result = SanitizeStage(settings).run(context, manifest.documents)
         _record_or_abort(manifest, context, sanitize_result, "Sanitize 阶段没有成功文件")
-    result = KimiStage(settings).run(context, manifest.documents)
-    _record_or_abort(manifest, context, result, "Kimi 阶段没有成功文件")
+    result = OrganizeStage(settings).run(context, manifest.documents)
+    _record_or_abort(manifest, context, result, "Organize 阶段没有成功文件")
     manifest.status = stage_completion_status(manifest.documents, result, "organized")
     manifest.save(context.manifest_path)
-    print(f"[Pipeline] Kimi organize 完成: runs/{context.run_id}, 用时 {format_duration(time.monotonic() - start)}", flush=True)
+    print(f"[Pipeline] organize 完成: runs/{context.run_id}, 用时 {format_duration(time.monotonic() - start)}", flush=True)
     return manifest
 
 
@@ -158,7 +159,8 @@ def run_retry_failed(
     settings: Settings | None = None,
     mineru_stage: MinerUStage | None = None,
     sanitize_stage: SanitizeStage | None = None,
-    kimi_stage: KimiStage | None = None,
+    organize_stage: OrganizeStage | None = None,
+    kimi_stage: OrganizeStage | None = None,
     render_stage: RenderStage | None = None,
 ) -> RunManifest:
     start = time.monotonic()
@@ -173,11 +175,11 @@ def run_retry_failed(
         return manifest
 
     needs_mineru = any(not path_exists(document.mineru_markdown_path) for document in documents)
-    needs_kimi = any(not path_exists(document.kimi_markdown_path) for document in documents)
+    needs_organize = any(not path_exists(document.organized_markdown_path) for document in documents)
     if needs_mineru and not settings.mineru_api_token:
         raise PipelineError("缺少必要配置: MINERU_API_TOKEN")
-    if needs_kimi and not settings.kimi_api_key:
-        raise PipelineError("缺少必要配置: KIMI_API_KEY")
+    if needs_organize and not settings.llm_api_key:
+        raise PipelineError("缺少必要配置: LLM_API_KEY")
 
     print(f"[Pipeline] 开始补跑失败文件: run_id={run_id}, files={len(documents)}", flush=True)
     for document in documents:
@@ -196,25 +198,26 @@ def run_retry_failed(
         if settings.sanitize_enabled
         and path_exists(document.mineru_markdown_path)
         and not path_exists(document.sanitized_markdown_path)
-        and not path_exists(document.kimi_markdown_path)
+        and not path_exists(document.organized_markdown_path)
     ]
     if sanitize_documents:
         result = (sanitize_stage or SanitizeStage(settings)).run(context, sanitize_documents)
         _record_retry_stage(manifest, context, result)
 
-    kimi_documents = [
+    organize_documents = [
         document
         for document in documents
-        if path_exists(kimi_input_markdown_path(document, settings)) and not path_exists(document.kimi_markdown_path)
+        if path_exists(organize_input_markdown_path(document, settings))
+        and not path_exists(document.organized_markdown_path)
     ]
-    if kimi_documents:
-        result = (kimi_stage or KimiStage(settings)).run(context, kimi_documents)
+    if organize_documents:
+        result = (organize_stage or kimi_stage or OrganizeStage(settings)).run(context, organize_documents)
         _record_retry_stage(manifest, context, result)
 
     render_documents = [
         document
         for document in documents
-        if path_exists(document.kimi_markdown_path) and not path_exists(document.final_output_path)
+        if path_exists(document.organized_markdown_path) and not path_exists(document.final_output_path)
     ]
     if render_documents:
         result = (render_stage or RenderStage(settings)).run(context, render_documents)
@@ -288,12 +291,15 @@ def path_exists(path: Path | None) -> bool:
     return path is not None and path.exists()
 
 
-def kimi_input_markdown_path(document: DocumentRecord, settings: Settings) -> Path | None:
+def organize_input_markdown_path(document: DocumentRecord, settings: Settings) -> Path | None:
     if document.sanitized_markdown_path:
         return document.sanitized_markdown_path
     if settings.sanitize_enabled:
         return None
     return document.mineru_markdown_path
+
+
+kimi_input_markdown_path = organize_input_markdown_path
 
 
 def document_is_complete(document: DocumentRecord) -> bool:
@@ -325,10 +331,10 @@ def reset_document_for_retry(document: DocumentRecord) -> None:
         return
     document.final_output_path = None
 
-    if path_exists(document.kimi_markdown_path):
-        document.status = "kimi_done"
+    if path_exists(document.organized_markdown_path):
+        document.status = "organized_done"
         return
-    document.kimi_markdown_path = None
+    document.organized_markdown_path = None
 
     if path_exists(document.sanitized_markdown_path):
         document.status = "sanitized_done"

@@ -55,11 +55,11 @@ class PipelineTest(unittest.TestCase):
                 documents[0].mineru_markdown_path = output
                 return StageResult(stage="mineru", success=1, output_files=[output])
 
-            def kimi_writer(context, documents):
-                output = context.kimi_dir / f"{documents[0].source_id}.md"
-                output.write_text("kimi", encoding="utf-8")
-                documents[0].kimi_markdown_path = output
-                return StageResult(stage="kimi", success=1, output_files=[output])
+            def organize_writer(context, documents):
+                output = context.organized_dir / f"{documents[0].source_id}.md"
+                output.write_text("organized", encoding="utf-8")
+                documents[0].organized_markdown_path = output
+                return StageResult(stage="organize", success=1, output_files=[output])
 
             def render_writer(context, documents):
                 output = context.final_dir / f"{documents[0].source_id}.md"
@@ -73,18 +73,18 @@ class PipelineTest(unittest.TestCase):
                 run_id="run-1",
                 settings=settings,
                 mineru_stage=FakeStage("mineru", calls, mineru_writer),
-                kimi_stage=FakeStage("kimi", calls, kimi_writer),
+                organize_stage=FakeStage("organize", calls, organize_writer),
                 render_stage=FakeStage("render", calls, render_writer),
             )
 
-            self.assertEqual(calls, ["mineru", "kimi", "render"])
+            self.assertEqual(calls, ["mineru", "organize", "render"])
             self.assertEqual(manifest.status, "success")
             self.assertTrue(source_file.exists())
             self.assertTrue((settings.runs_dir / "run-1" / "source" / "0001_Report.pdf").exists())
             self.assertFalse((settings.data_dir / "run-1").exists())
             self.assertIn("render", manifest.stages)
 
-    def test_run_pipeline_runs_sanitize_before_kimi_when_enabled(self):
+    def test_run_pipeline_runs_sanitize_before_organize_when_enabled(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             settings = make_settings(temp_path, sanitize_enabled=True, sanitize_entities_path=temp_path / "entities.json")
@@ -106,12 +106,12 @@ class PipelineTest(unittest.TestCase):
                 documents[0].sanitized_markdown_path = output
                 return StageResult(stage="sanitize", success=1, output_files=[output])
 
-            def kimi_writer(context, documents):
+            def organize_writer(context, documents):
                 self.assertEqual(documents[0].sanitized_markdown_path.read_text(encoding="utf-8"), "sanitized")
-                output = context.kimi_dir / f"{documents[0].source_id}.md"
-                output.write_text("kimi", encoding="utf-8")
-                documents[0].kimi_markdown_path = output
-                return StageResult(stage="kimi", success=1, output_files=[output])
+                output = context.organized_dir / f"{documents[0].source_id}.md"
+                output.write_text("organized", encoding="utf-8")
+                documents[0].organized_markdown_path = output
+                return StageResult(stage="organize", success=1, output_files=[output])
 
             def render_writer(context, documents):
                 output = context.final_dir / f"{documents[0].source_id}.md"
@@ -126,11 +126,11 @@ class PipelineTest(unittest.TestCase):
                 settings=settings,
                 mineru_stage=FakeStage("mineru", calls, mineru_writer),
                 sanitize_stage=FakeStage("sanitize", calls, sanitize_writer),
-                kimi_stage=FakeStage("kimi", calls, kimi_writer),
+                organize_stage=FakeStage("organize", calls, organize_writer),
                 render_stage=FakeStage("render", calls, render_writer),
             )
 
-            self.assertEqual(calls, ["mineru", "sanitize", "kimi", "render"])
+            self.assertEqual(calls, ["mineru", "sanitize", "organize", "render"])
             self.assertEqual(manifest.status, "success")
             self.assertIn("sanitize", manifest.stages)
 
@@ -236,13 +236,13 @@ class PipelineTest(unittest.TestCase):
                     errors={documents[1].source_id: "upload timeout"},
                 )
 
-            def initial_kimi(context, documents):
+            def initial_organize(context, documents):
                 document = documents[0]
-                output = context.kimi_dir / f"{document.source_id}.md"
-                output.write_text("kimi", encoding="utf-8")
-                document.kimi_markdown_path = output
-                document.status = "kimi_done"
-                return StageResult(stage="kimi", success=1, output_files=[output])
+                output = context.organized_dir / f"{document.source_id}.md"
+                output.write_text("organized", encoding="utf-8")
+                document.organized_markdown_path = output
+                document.status = "organized_done"
+                return StageResult(stage="organize", success=1, output_files=[output])
 
             def initial_render(context, documents):
                 document = documents[0]
@@ -257,7 +257,7 @@ class PipelineTest(unittest.TestCase):
                 run_id="run-1",
                 settings=settings,
                 mineru_stage=FakeStage("mineru", calls, initial_mineru),
-                kimi_stage=FakeStage("kimi", calls, initial_kimi),
+                organize_stage=FakeStage("organize", calls, initial_organize),
                 render_stage=FakeStage("render", calls, initial_render),
             )
 
@@ -274,13 +274,13 @@ class PipelineTest(unittest.TestCase):
                 document.status = "mineru_done"
                 return StageResult(stage="mineru", success=1, output_files=[output])
 
-            def retry_kimi(context, documents):
+            def retry_organize(context, documents):
                 document = documents[0]
-                output = context.kimi_dir / f"{document.source_id}.md"
-                output.write_text("kimi retry", encoding="utf-8")
-                document.kimi_markdown_path = output
-                document.status = "kimi_done"
-                return StageResult(stage="kimi", success=1, output_files=[output])
+                output = context.organized_dir / f"{document.source_id}.md"
+                output.write_text("organized retry", encoding="utf-8")
+                document.organized_markdown_path = output
+                document.status = "organized_done"
+                return StageResult(stage="organize", success=1, output_files=[output])
 
             def retry_render(context, documents):
                 document = documents[0]
@@ -294,14 +294,14 @@ class PipelineTest(unittest.TestCase):
                 "run-1",
                 settings=settings,
                 mineru_stage=FakeStage("retry_mineru", calls, retry_mineru),
-                kimi_stage=FakeStage("retry_kimi", calls, retry_kimi),
+                organize_stage=FakeStage("retry_organize", calls, retry_organize),
                 render_stage=FakeStage("retry_render", calls, retry_render),
             )
 
             self.assertEqual(retried.status, "success")
             self.assertEqual(list_failed_documents("run-1", settings=settings), [])
             self.assertIn("retry_mineru", retried.stages)
-            self.assertIn("retry_kimi", retried.stages)
+            self.assertIn("retry_organize", retried.stages)
             self.assertIn("retry_render", retried.stages)
 
     def test_archive_run_moves_only_requested_run_directory(self):

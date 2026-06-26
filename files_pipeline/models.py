@@ -42,9 +42,12 @@ class TokenUsage:
 
 
 @dataclass
-class KimiCompletion:
+class LLMCompletion:
     content: str
     token_usage: TokenUsage = field(default_factory=TokenUsage)
+
+
+KimiCompletion = LLMCompletion
 
 
 @dataclass
@@ -57,10 +60,18 @@ class DocumentRecord:
     extension: str
     mineru_markdown_path: Path | None = None
     sanitized_markdown_path: Path | None = None
-    kimi_markdown_path: Path | None = None
+    organized_markdown_path: Path | None = None
     final_output_path: Path | None = None
     status: str = "pending"
     errors: list[str] = field(default_factory=list)
+
+    @property
+    def kimi_markdown_path(self) -> Path | None:
+        return self.organized_markdown_path
+
+    @kimi_markdown_path.setter
+    def kimi_markdown_path(self, value: Path | None) -> None:
+        self.organized_markdown_path = value
 
     def add_error(self, message: str) -> None:
         self.status = "failed"
@@ -76,7 +87,7 @@ class DocumentRecord:
             "extension": self.extension,
             "mineru_markdown_path": _path_to_text(self.mineru_markdown_path, run_dir),
             "sanitized_markdown_path": _path_to_text(self.sanitized_markdown_path, run_dir),
-            "kimi_markdown_path": _path_to_text(self.kimi_markdown_path, run_dir),
+            "organized_markdown_path": _path_to_text(self.organized_markdown_path, run_dir),
             "final_output_path": _path_to_text(self.final_output_path, run_dir),
             "status": self.status,
             "errors": self.errors,
@@ -99,7 +110,7 @@ class DocumentRecord:
             extension=data["extension"],
             mineru_markdown_path=resolve(data.get("mineru_markdown_path")),
             sanitized_markdown_path=resolve(data.get("sanitized_markdown_path")),
-            kimi_markdown_path=resolve(data.get("kimi_markdown_path")),
+            organized_markdown_path=resolve(data.get("organized_markdown_path") or data.get("kimi_markdown_path")),
             final_output_path=resolve(data.get("final_output_path")),
             status=data.get("status", "pending"),
             errors=list(data.get("errors", [])),
@@ -137,10 +148,14 @@ class RunContext:
     source_dir: Path
     mineru_dir: Path
     sanitized_dir: Path
-    kimi_dir: Path
+    organized_dir: Path
     assets_dir: Path
     final_dir: Path
     manifest_path: Path
+
+    @property
+    def kimi_dir(self) -> Path:
+        return self.organized_dir
 
     @classmethod
     def create(cls, runs_dir: Path, run_id: str, assets_base_dir: Path | None = None) -> "RunContext":
@@ -152,7 +167,7 @@ class RunContext:
             source_dir=run_dir / "source",
             mineru_dir=run_dir / "mineru",
             sanitized_dir=run_dir / "sanitized",
-            kimi_dir=run_dir / "kimi",
+            organized_dir=run_dir / "organized",
             assets_dir=assets_dir,
             final_dir=run_dir / "final",
             manifest_path=run_dir / "manifest.json",
@@ -164,7 +179,7 @@ class RunContext:
             self.source_dir,
             self.mineru_dir,
             self.sanitized_dir,
-            self.kimi_dir,
+            self.organized_dir,
             self.assets_dir,
             self.final_dir,
         ]:

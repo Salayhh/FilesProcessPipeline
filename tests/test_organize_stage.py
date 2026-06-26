@@ -3,13 +3,13 @@ import threading
 import unittest
 from pathlib import Path
 
-from files_pipeline.models import DocumentRecord, KimiCompletion, RunContext, TokenUsage
-from files_pipeline.stages.kimi import KimiStage
+from files_pipeline.models import DocumentRecord, LLMCompletion, RunContext, TokenUsage
+from files_pipeline.stages.organize import OrganizeStage
 
 from tests.utils import make_settings
 
 
-class FakeKimiClient:
+class FakeLLMClient:
     def __init__(self, responses):
         self.responses = list(responses)
         self.calls = []
@@ -22,7 +22,7 @@ class FakeKimiClient:
         return response
 
 
-class ConcurrentKimiClient:
+class ConcurrentLLMClient:
     def __init__(self, expected_calls):
         self.expected_calls = expected_calls
         self.calls = []
@@ -44,36 +44,37 @@ class ConcurrentKimiClient:
         with self.lock:
             self.active -= 1
 
-        return KimiCompletion(f"ok {file_name}", TokenUsage(1, 2, 3))
+        return LLMCompletion(f"ok {file_name}", TokenUsage(1, 2, 3))
 
 
-class KimiStageTest(unittest.TestCase):
-    def test_run_writes_kimi_markdown_and_accumulates_tokens(self):
+class OrganizeStageTest(unittest.TestCase):
+    def test_run_writes_organized_markdown_and_accumulates_tokens(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            settings = make_settings(temp_path, kimi_retry_delay=0)
+            settings = make_settings(temp_path, llm_retry_delay=0)
             context = RunContext.create(settings.runs_dir, "run-1")
             context.ensure_directories()
             mineru_md = context.mineru_dir / "0001_doc" / "0001_doc.md"
             mineru_md.parent.mkdir(parents=True)
             mineru_md.write_text("原始内容\n![](images/a.png)\n", encoding="utf-8")
             document = make_document(temp_path, context, mineru_md)
-            completion = KimiCompletion("# 不良项目：A", TokenUsage(10, 20, 30))
-            client = FakeKimiClient([completion])
+            completion = LLMCompletion("# 不良项目：A", TokenUsage(10, 20, 30))
+            client = FakeLLMClient([completion])
 
-            result = KimiStage(settings, client=client).run(context, [document])
+            result = OrganizeStage(settings, client=client).run(context, [document])
 
+            self.assertEqual(result.stage, "organize")
             self.assertEqual(result.success, 1)
             self.assertEqual(result.failed, 0)
             self.assertEqual(result.token_usage.total_tokens, 30)
             self.assertEqual(client.calls, [("原始内容\n![](images/a.png)\n", "doc.pdf")])
-            self.assertEqual(document.kimi_markdown_path, context.kimi_dir / "0001_doc.md")
-            self.assertEqual(document.kimi_markdown_path.read_text(encoding="utf-8"), "# 不良项目：A")
+            self.assertEqual(document.organized_markdown_path, context.organized_dir / "0001_doc.md")
+            self.assertEqual(document.organized_markdown_path.read_text(encoding="utf-8"), "# 不良项目：A")
 
     def test_run_processes_documents_concurrently(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            settings = make_settings(temp_path, kimi_concurrency=2, kimi_retry_delay=0)
+            settings = make_settings(temp_path, llm_concurrency=2, llm_retry_delay=0)
             context = RunContext.create(settings.runs_dir, "run-1")
             context.ensure_directories()
             documents = []
@@ -82,9 +83,9 @@ class KimiStageTest(unittest.TestCase):
                 mineru_md.parent.mkdir(parents=True)
                 mineru_md.write_text(f"原始内容 {file_name}", encoding="utf-8")
                 documents.append(make_document(temp_path, context, mineru_md, source_id, file_name))
-            client = ConcurrentKimiClient(expected_calls=2)
+            client = ConcurrentLLMClient(expected_calls=2)
 
-            result = KimiStage(settings, client=client).run(context, documents)
+            result = OrganizeStage(settings, client=client).run(context, documents)
 
             self.assertEqual(result.success, 2)
             self.assertEqual(result.failed, 0)
@@ -94,16 +95,16 @@ class KimiStageTest(unittest.TestCase):
     def test_run_retries_api_failure(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            settings = make_settings(temp_path, kimi_max_retries=1, kimi_retry_delay=0)
+            settings = make_settings(temp_path, llm_max_retries=1, llm_retry_delay=0)
             context = RunContext.create(settings.runs_dir, "run-1")
             context.ensure_directories()
             mineru_md = context.mineru_dir / "0001_doc" / "0001_doc.md"
             mineru_md.parent.mkdir(parents=True)
             mineru_md.write_text("原始内容", encoding="utf-8")
             document = make_document(temp_path, context, mineru_md)
-            client = FakeKimiClient([RuntimeError("busy"), KimiCompletion("ok", TokenUsage(1, 2, 3))])
+            client = FakeLLMClient([RuntimeError("busy"), LLMCompletion("ok", TokenUsage(1, 2, 3))])
 
-            result = KimiStage(settings, client=client).run(context, [document])
+            result = OrganizeStage(settings, client=client).run(context, [document])
 
             self.assertEqual(result.success, 1)
             self.assertEqual(len(client.calls), 2)
@@ -123,9 +124,9 @@ class KimiStageTest(unittest.TestCase):
             sanitized_md.write_text("公司_001", encoding="utf-8")
             document = make_document(temp_path, context, mineru_md)
             document.sanitized_markdown_path = sanitized_md
-            client = FakeKimiClient([KimiCompletion("ok", TokenUsage(1, 2, 3))])
+            client = FakeLLMClient([LLMCompletion("ok", TokenUsage(1, 2, 3))])
 
-            result = KimiStage(settings, client=client).run(context, [document])
+            result = OrganizeStage(settings, client=client).run(context, [document])
 
             self.assertEqual(result.success, 1)
             self.assertEqual(client.calls, [("公司_001", "doc.pdf")])
@@ -140,9 +141,9 @@ class KimiStageTest(unittest.TestCase):
             mineru_md.parent.mkdir(parents=True)
             mineru_md.write_text("原始公司名", encoding="utf-8")
             document = make_document(temp_path, context, mineru_md)
-            client = FakeKimiClient([])
+            client = FakeLLMClient([])
 
-            result = KimiStage(settings, client=client).run(context, [document])
+            result = OrganizeStage(settings, client=client).run(context, [document])
 
             self.assertEqual(result.success, 0)
             self.assertEqual(result.failed, 1)
@@ -158,9 +159,9 @@ class KimiStageTest(unittest.TestCase):
             mineru_md.parent.mkdir(parents=True)
             mineru_md.write_text("  ", encoding="utf-8")
             document = make_document(temp_path, context, mineru_md)
-            client = FakeKimiClient([])
+            client = FakeLLMClient([])
 
-            result = KimiStage(settings, client=client).run(context, [document])
+            result = OrganizeStage(settings, client=client).run(context, [document])
 
             self.assertEqual(result.success, 0)
             self.assertEqual(result.failed, 1)
